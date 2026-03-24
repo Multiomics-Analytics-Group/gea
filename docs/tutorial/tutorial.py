@@ -5,7 +5,7 @@
 # an minimal integration test for the package.
 
 # %%
-from python_package import hello_world
+from gea import hello_world
 
 # %% [markdown]
 # ## Hello World
