@@ -1,17 +1,11 @@
 # gea/dataloader.py
 from copyreg import pickle
-
 import pandas as pd
-import numpy as np
-import mygene
 import requests
 import io
-import shutil
 from transformers import BertModel
-from pybiomart import Server
 from huggingface_hub import hf_hub_download
 import pickle
-from gea.utils import ensembl_to_gene, get_gene_list
 
 
 def load_counts(path: str, delim="\t", index_col="Geneid") -> pd.DataFrame:
