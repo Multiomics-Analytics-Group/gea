@@ -1,11 +1,27 @@
 # gea/utils.py
 import pandas as pd
-import numpy as np
 import mygene
 from transformers import BertModel
 import torch
-from pybiomart import Server
 from tqdm import tqdm
+import os
+
+
+def query_biomart(attributes, attempts=10):
+
+    from pybiomart import Server
+
+    for attempt in range(attempts):
+
+        try:
+            server = Server(host="http://www.ensembl.org", use_cache=False)
+            dataset = server["ENSEMBL_MART_ENSEMBL"]["hsapiens_gene_ensembl"]
+            return dataset.query(attributes=attributes)
+
+        except Exception as e:
+            print(f"Attempt {attempt+1}/{attempts} failed: {e}")
+
+    raise RuntimeError(f"All {attempts} attempts failed.")
 
 
 def ensembl_to_gene(gene_data: pd.DataFrame, species="human") -> pd.DataFrame:
@@ -118,66 +134,12 @@ def get_geneformer_embeddings(
     torch.Tensor
         A tensor containing the gene embeddings.
     """
-    # Via 1: Ensembl servers
-    biomart_urls = [
-        "http://www.ensembl.org",  # Original
-        "http://useast.ensembl.org",  # US East mirror
-        "http://asia.ensembl.org",  # Asia mirror
-    ]
-
-    mapping_successful = False
-
-    for url in biomart_urls:
-        try:
-            print(f"Attemping to fetch gene mapping from Ensembl at: {url}...")
-            server = Server(host=url)
-            dataset = server.marts["ENSEMBL_MART_ENSEMBL"].datasets[
-                "hsapiens_gene_ensembl"
-            ]
-            mapping = dataset.query(attributes=["hgnc_symbol", "ensembl_gene_id"])
-
-            mapping = mapping.rename(
-                columns={"HGNC symbol": "symbol", "Gene stable ID": "ensembl_id"}
-            ).dropna()
-            symbol_to_ensembl = dict(zip(mapping["symbol"], mapping["ensembl_id"]))
-            print(f"Succesfully mapped genes using BioMart ({url}).")
-            mapping_successful = True
-            break
-
-        except Exception as e:
-            print(f"BioMart query failed for {url}.")
-
-    if not mapping_successful:
-        print(
-            "All Ensembl BioMart servers are currently down. Falling back to MyGene.info API..."
-        )
-        try:
-            mg = mygene.MyGeneInfo()
-            results = mg.querymany(
-                gene_list,
-                scopes="symbol",
-                fields="human",
-                as_dataframe=True,
-                verbose=False,
-            )
-
-            if "ensembl.gene" in results.columns:
-                valid_results = results.dropna(subset=["ensembl.gene"])
-
-                for symbol, _ in valid_results.iterrows():
-                    ensembl_id = ["ensembl.gene"]
-                    if isinstance(ensembl_id, list):
-                        ensembl_id = ensembl_id[0]
-
-                    symbol_to_ensembl[symbol] = ensembl_id
-
-                print("Succesfully mapped genes using MyGene.")
-
-            else:
-                print("Error: 'ensembl.gene' field not found in MyGene response.")
-
-        except Exception as e:
-            print(f"Critical Error: MyGene fallback also failed: {e}")
+    # Mapping symbols to Ensembl IDs
+    mapping = query_biomart(attributes=["hgnc_symbol", "ensembl_gene_id"])
+    mapping = mapping.rename(
+        columns={"HGNC symbol": "symbol", "Gene stable ID": "ensembl_id"}
+    ).dropna()
+    symbol_to_ensembl = dict(zip(mapping["symbol"], mapping["ensembl_id"]))
 
     # Extract embeddings for genes in the gene list
     embedding_matrix = model.embeddings.word_embeddings.weight
