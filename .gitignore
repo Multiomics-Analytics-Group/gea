@@ -54,3 +54,6 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+
+# biomaRt package cache file
+.pybiomart.sqlite
