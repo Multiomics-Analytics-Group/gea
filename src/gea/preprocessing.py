@@ -135,9 +135,9 @@ def normalize_counts(counts_df: pd.DataFrame) -> pd.DataFrame:
         A normalized DataFrame where counts have been transformed to log2(CPM + 1). Rows and columns are switched.
     """
     # Gene count data into transponse format for normalization
-    counts_df_t = (
-        counts_df.rename(columns={"gene_symbol": "samples"}).set_index("samples").T
-    )
+    counts_df_t = counts_df.copy()
+    counts_df_t.index.names = ["samples"]
+    counts_df_t = counts_df.T
 
     # Normalize data (log2 CPM)
     lib_size = counts_df_t.sum(axis=1)
