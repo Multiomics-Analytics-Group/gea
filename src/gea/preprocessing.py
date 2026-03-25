@@ -284,7 +284,7 @@ def lioness_ppi(
         # Iterate on all samples, leave-one-out G_{-s} correlation and LIONESS in z-space
         for s in tqdm(
             samples,
-            desc=f"LIONESS samples (PPI filtered) for group {i}/{I}",
+            desc=f"LIONESS samples (PPI filtered) for group {i+1}/{I}",
             disable=not verbose,
         ):
             # Drop samples (s)
@@ -321,7 +321,7 @@ def lioness_ppi(
             # Save
             sample_networks[s] = edges.reset_index(drop=True)
 
-        return sample_networks
+    return sample_networks
 
 
 def gene_networks_to_pyg(
@@ -374,7 +374,7 @@ def gene_networks_to_pyg(
             continue  # Skip samples that are not in the normalized data
 
         # 1. Node Features: [Expression (1) + Gene embeddings (hidden_dim)]
-        expr = norm_data.loc[s]
+        expr = norm_data.loc[s].values.astype(np.float32).reshape(-1, 1)
         expr_tensor = torch.from_numpy(expr)
         x = torch.cat([expr_tensor, static_embeddings], dim=1)
 
