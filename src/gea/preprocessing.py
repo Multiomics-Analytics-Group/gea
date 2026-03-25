@@ -137,7 +137,7 @@ def normalize_counts(counts_df: pd.DataFrame) -> pd.DataFrame:
     # Gene count data into transponse format for normalization
     counts_df_t = counts_df.copy()
     counts_df_t.index.names = ["samples"]
-    counts_df_t = counts_df.T
+    counts_df_t = counts_df_t.T
 
     # Normalize data (log2 CPM)
     lib_size = counts_df_t.sum(axis=1)
@@ -177,7 +177,9 @@ def merge_metadata(
     pd.DataFrame
         A merged DataFrame containing both count data and sample metadata.
     """
-    rel_metadata = metadata_df[meta_cols].rename(columns={meta_on: counts_on})
+    rel_metadata = metadata_df[[meta_on, meta_cols]].rename(
+        columns={meta_on: counts_on}
+    )
     joint_data = rel_metadata.merge(
         counts_df, left_on=counts_on, right_index=True, how="inner"
     )
