@@ -146,6 +146,8 @@ class GraphClassifier(nn.Module):
         self.layer1 = nn.Linear(in_dim, in_dim // 2)
         self.actfn = nn.ReLU()
         self.layer2 = nn.Linear(in_dim // 2, n_classes)
+        # Loss criterion
+        self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, x):
         """
@@ -183,12 +185,11 @@ class GraphClassifier(nn.Module):
         -------
 
         """
-        loss = nn.CrossEntropyLoss()
 
-        return loss(pred, true)
+        return self.criterion(pred, true)
 
 
-class EdgePredictor(nn.module):
+class EdgePredictor(nn.Module):
     def __init__(self, in_dim):
         """
         Define an edge predictor to infer the edge weight between two nodes based on its node-level embedding from a GNN model.
@@ -203,26 +204,24 @@ class EdgePredictor(nn.module):
         self.layer1 = nn.Linear(in_dim * 2, in_dim)
         self.actfn = nn.ReLU()
         self.layer2 = nn.Linear(in_dim, 1)
+        # Loss criterion
+        self.criterion = nn.MSELoss()
 
-    def forward(self, nodeA, nodeB):
+    def forward(self, nodes):
         """
         Forward pass through predictor.
 
         Parameters
         ----------
-        nodeA:
-
-        nodeB:
+        nodes:
 
 
         Returns
         -------
 
         """
-        # Concatenate node embeddings
-        x = torch.cat([nodeA, nodeB], dim=1)
         # Pass first layer
-        h = self.layer1(x)
+        h = self.layer1(nodes)
         # Activation function
         h = self.actfn(h)
         # Pass second layer
@@ -245,9 +244,7 @@ class EdgePredictor(nn.module):
         -------
 
         """
-        loss = nn.MSELoss()
-
-        return loss(pred, true)
+        return self.criterion(pred, true)
 
 
 class GNNModel(nn.Module):
@@ -315,6 +312,11 @@ def train_gnn(
 
         for batch in train_loader:
             batch = batch.to(device)
+
+            batch.x = batch.x.detach().requires_grad_(False)
+            batch.edge_attr = batch.edge_attr.detach().requires_grad_(False)
+            batch.y = batch.y.detach()
+
             optimizer.zero_grad()
             # Prediction
             pred_edge, pred_class = model(batch)
