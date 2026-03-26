@@ -1,7 +1,7 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Multiomics-Analytics-Group/gea/docs/images/gea_night_no_bg.png">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/Multiomics-Analytics-Group/gea/docs/images/gea_day_no_bg.png">
-  <img alt="Project logo" src="https://github.com/Multiomics-Analytics-Group/gea/docs/images/gea_day_no_bg.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Multiomics-Analytics-Group/gea/HEAD/docs/images/gea_night_no_bg.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Multiomics-Analytics-Group/gea/HEAD/docs/images/gea_day_no_bg.png">
+  <img alt="Project logo" src="https://raw.githubusercontent.com/Multiomics-Analytics-Group/gea/HEAD/docs/images/gea_day_no_bg.png">
 </picture>
 
 # GEA: Graph Explainable Attribution
