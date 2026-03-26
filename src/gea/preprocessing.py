@@ -220,6 +220,96 @@ def get_corr_matrix(counts_df: pd.DataFrame, group_by: str):
     return pearson_corrs, grouped_data
 
 
+def lioness(
+    grouped_count_df: list,
+    corr_matrices: list,
+    threshold=0.25,
+    verbose=True,
+) -> list:
+    """
+    Baseline, function that applies the LIONES algorithm to the gene co-expression matrices to infer sample-specific gene-gene interaction networks.
+
+    Parameters
+    ----------
+    grouped_count_df: list
+        A list of DataFrames representing the grouped count data used for correlation calculation.
+    corr_matrices: list
+        A list of DataFrames representing the gene-gene correlation matrices for each group.
+    threshold: float
+        The correlation threshold to consider an edge as present in the inferred network (default is 0.25).
+    verbose: bool
+        Whether to print progress information during the LIONESS algorithm execution (default is True).
+
+    Returns
+    -------
+    list
+        A list of DataFrames representing the inferred sample-specific gene-gene interaction networks.
+    """
+    sample_networks = {}
+    I = len(grouped_count_df)
+
+    for i, group_data in enumerate(grouped_count_df):
+        # Relevant data
+        samples = group_data.index.tolist()
+        genes = np.array(group_data.columns.tolist())
+        N = group_data.shape[0]
+
+        # Correlation matrix
+        corr_matrix = corr_matrices[i]
+
+        # Get indices for all unique gene pairs (upper triangle, offset by 1 to exclude self-loops)
+        num_genes = len(genes)
+        row_idx, col_idx = np.triu_indices(num_genes, k=1)
+
+        # Pre-extract gene names for the upper triangle pairs
+        genes_A_all = genes[row_idx]
+        genes_B_all = genes[col_idx]
+
+        # Fisher z-transform of aggregate network G
+        G = corr_matrix.values
+        Z = np.arctanh(np.clip(G, -1 + 1e-12, 1 - 1e-12))
+
+        # Iterate on all samples, leave-one-out G_{-s} correlation and LIONESS in z-space
+        for s in tqdm(
+            samples,
+            desc=f"LIONESS samples (All Edges) for group {i+1}/{I}",
+            disable=not verbose,
+        ):
+            # Drop sample (s)
+            data_minus_s = group_data.drop(index=s)
+
+            # Correlation on N-1 samples
+            G_minus_s = data_minus_s.corr(method="pearson").values
+
+            # Z-space
+            Z_minus_s = np.arctanh(np.clip(G_minus_s, -1 + 1e-12, 1 - 1e-12))
+
+            # LIONESS in z-space
+            Z_s = N * (Z - Z_minus_s) + Z_minus_s
+
+            # Extract weights for the upper triangle (all unique edges)
+            Z_s_all = Z_s[row_idx, col_idx]
+
+            # Going back to Pearson R space
+            G_s_all = np.tanh(Z_s_all)
+
+            # Filter correlations under threshold
+            keep_mask = np.abs(G_s_all) >= threshold
+
+            # Create DataFrame for the sample-specific network using numpy masking (much faster)
+            edges = pd.DataFrame(
+                {
+                    "geneA": genes_A_all[keep_mask],
+                    "geneB": genes_B_all[keep_mask],
+                    "weight": G_s_all[keep_mask],
+                }
+            )
+            # Save
+            sample_networks[s] = edges.reset_index(drop=True)
+
+    return sample_networks
+
+
 def lioness_ppi(
     grouped_count_df: list,
     corr_matrices: list,

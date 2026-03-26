@@ -29,7 +29,15 @@ def load_counts(path: str, delim="\t", index_col="Geneid") -> pd.DataFrame:
     return pd.read_csv(path, sep=delim, index_col=index_col)
 
 
-def load_ppi_network(
+def load_network():
+    pass
+
+
+def load_pubchem_network():
+    pass
+
+
+def load_string_ppi_network(
     gene_list: list, species=9606, conf_score=600, api_url="https://string-db.org/api"
 ) -> pd.DataFrame:
     """
