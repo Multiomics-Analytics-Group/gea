@@ -1,8 +1,11 @@
-<picture>
+<!-- <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Multiomics-Analytics-Group/gea/HEAD/docs/images/gea_night_no_bg.png">
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Multiomics-Analytics-Group/gea/HEAD/docs/images/gea_day_no_bg.png">
   <img alt="Project logo" src="https://raw.githubusercontent.com/Multiomics-Analytics-Group/gea/HEAD/docs/images/gea_day_no_bg.png">
-</picture>
+</picture> -->
+
+![Project logo](docs/images/gea_night_no_bg.png#gh-dark-mode-only)
+![Project logo](docs/images/gea_day_no_bg.png#gh-light-mode-only)
 
 <p align="center"><em>GEA: Decomposing GNN embeddings with Graph Explainable Attribution</em></p>
 
