@@ -402,6 +402,98 @@ def train_gnn(
     progress_bar.close()
 
 
-# class SAE(nn.Module):
+class ShallowSAE(nn.Module):
+    def __init__(self, in_dim, latent_dim, sparsity_weight=1e-5):
+        """
+        Define a shallow sparse autoencoder (SAE) model as implemented in Anthropic's paper "Decomposing Language Models with Dictionary Learning"
+
+        Parameters
+        ----------
+
+        """
+        super().__init__()
+
+        # MSE loss + L1 sparsity penalty
+        self.criterion = nn.MSELoss()
+        self.sparsity_weight = sparsity_weight
+
+        # Encoder parameters
+        self.W_enc = nn.Parameter(torch.randn(in_dim, latent_dim) / in_dim**0.5)
+        self.b_enc = nn.Parameter(torch.zeros(latent_dim))
+
+        # Decoder parameters
+        self.W_dec = nn.Parameter(torch.randn(latent_dim, in_dim) / latent_dim**0.5)
+        self.b_dec = nn.Parameter(torch.zeros(in_dim))
+
+    def forward(self, x):
+        # Shift input by decoder bias to center around zero
+        x_enc = x - self.b_dec
+        # Linear encoder transformation followed by ReLU activation to enforce non-negativity
+        z = F.relu(x_enc @ self.W_enc + self.b_enc)
+        # Linear decoder transformation to reconstruct input
+        x_recon = (z @ self.W_dec) + self.b_dec
+
+        return z, x_recon
+
+    def loss(self, pred_x, true_x, z):
+        loss_recon = self.criterion(pred_x, true_x)
+        loss_sparsity = self.sparsity_weight * torch.mean(
+            torch.sum(torch.abs(z), dim=1)
+        )
+
+        return loss_recon + loss_sparsity
+
+    def normalize_weights(self):
+        with torch.no_grad():
+            norms = torch.norm(self.W_dec, dim=1, keepdim=True)
+            self.W_dec.data = self.W_dec.data / (norms + 1e-12)
+
+
+def train_sae(
+    model,
+    train_loader,
+    device,
+    epochs=1000,
+    lr=1e-3,
+    w_l2=1e-4,
+):
+
+    model.train()
+
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=w_l2)
+
+    total_steps = len(train_loader) * epochs
+
+    progress_bar = tqdm(
+        range(total_steps),
+        desc="Training SAE model",
+    )
+
+    for epoch in range(epochs):
+
+        for batch in train_loader:
+            batch = batch.to(device)
+            optimizer.zero_grad()
+
+            # Forward pass through SAE
+            z, pred_x = model(batch)
+
+            # Calculate loss
+            loss = model.loss(pred_x, batch, z)
+
+            # Backpropagation and optimization step
+            loss.backward()
+            optimizer.step()
+            model.normalize_weights()  # normalize decoder weights to prevent collapse to zero and encourage diversity in learned features
+
+            # Update progress bar
+            progress_bar.set_postfix(
+                total_loss=f"{loss.item():.4f}",
+                epoch=f"{epoch}/{epochs + 1}",
+            )
+            progress_bar.update()
+
+    progress_bar.close()
+
 
 # class GEA(nn.Module):
