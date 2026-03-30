@@ -449,8 +449,9 @@ class ShallowSAE(nn.Module):
             self.W_dec.data = self.W_dec.data / (norms + 1e-12)
 
 
-def train_sae(
-    model,
+def train_sae_graph(
+    sae_model,
+    gnn_model,
     train_loader,
     device,
     epochs=1000,
@@ -458,9 +459,10 @@ def train_sae(
     w_l2=1e-4,
 ):
 
-    model.train()
+    sae_model.train()
+    gnn_model.eval()
 
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=w_l2)
+    optimizer = optim.Adam(sae_model.parameters(), lr=lr, weight_decay=w_l2)
 
     total_steps = len(train_loader) * epochs
 
@@ -475,16 +477,20 @@ def train_sae(
             batch = batch.to(device)
             optimizer.zero_grad()
 
+            # Extract graph-level embeddings
+            with torch.no_grad():
+                _, z_graph = gnn_model(batch)
+
             # Forward pass through SAE
-            z, pred_x = model(batch)
+            z, pred_z_graph = sae_model(z_graph)
 
             # Calculate loss
-            loss = model.loss(pred_x, batch, z)
+            loss = sae_model.loss(pred_z_graph, z_graph, z)
 
             # Backpropagation and optimization step
             loss.backward()
             optimizer.step()
-            model.normalize_weights()  # normalize decoder weights to prevent collapse to zero and encourage diversity in learned features
+            sae_model.normalize_weights()  # normalize decoder weights to prevent collapse to zero and encourage diversity in learned features
 
             # Update progress bar
             progress_bar.set_postfix(
