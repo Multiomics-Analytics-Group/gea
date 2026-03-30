@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 
 class GNN(nn.Module):
-    def __init__(self, net):
+    def __init__(self, gnn_layers, gnn_actfn, gnn_dropout):
         """
         Define a GNN model that takes in a Graph Neural Network (GNN) as the encoder to learn node and graph-level embeddings.
 
@@ -17,7 +17,9 @@ class GNN(nn.Module):
             A GNN model that encodes node and graph-level embeddings. It's forward pass should output the node-level embedding.
         """
         super().__init__()
-        self.gnn_net = net
+        self.gnn_layers = gnn_layers
+        self.gnn_actfn = gnn_actfn
+        self.gnn_dropout = nn.Dropout(gnn_dropout)
 
     def forward(self, data):
         """
@@ -35,7 +37,20 @@ class GNN(nn.Module):
         z_graph:
 
         """
-        z_node = self.gnn_net(data)
+        x, edge_index, edge_type, edge_weight = (
+            data.x,
+            data.edge_index,
+            data.edge_type,
+            data.edge_attr,
+        )
+
+        for i, layer in enumerate(self.gnn_layers):
+            x = layer(x, edge_index, edge_type, edge_weight)
+            if i < len(self.gnn_layers) - 1:
+                x = self.gnn_actfn(x)
+                x = self.gnn_dropout(x)
+
+        z_node = x
         z_graph = global_mean_pool(z_node, data.batch)
         return z_node, z_graph
 
@@ -57,7 +72,7 @@ class RGCNLayer(nn.Module):
         self.conv_pos = GCNConv(in_channels, out_channels)
         self.conv_neg = GCNConv(in_channels, out_channels)
 
-    def forward(self, data):
+    def forward(self, x, edge_index, edge_type, edge_weight):
         """
         Defina a forward pass through the R-GCN layer.
 
@@ -76,13 +91,6 @@ class RGCNLayer(nn.Module):
         -------
 
         """
-        x, edge_index, edge_type, edge_weight = (
-            data.x,
-            data.edge_index,
-            data.edge_type,
-            data.edge_attr,
-        )
-
         # Masking positive and negative edges
         pos_mask = edge_type == 0
         neg_mask = edge_type == 1
@@ -104,70 +112,6 @@ class RGCNLayer(nn.Module):
             )
 
         return pos_out + neg_out
-
-
-# class RGCN(nn.Module):
-#     def __init__(self, in_channels, hidden_channels, latent_dim, dropout=0.2):
-#         """
-#         Define a three RGCN-layer model.
-
-#         Parameters
-#         ----------
-#         in_channels: int
-
-#         hidden_channels: int
-
-#         latent_dim: int
-
-#         n_classes: int
-
-#         dropout: float
-
-#         """
-#         super().__init__()
-#         # Define dropout
-#         self.dropout = dropout
-#         # Define layers
-#         self.layer1 = RGCNLayer(in_channels, hidden_channels)
-#         self.layer2 = RGCNLayer(hidden_channels, hidden_channels)
-#         self.layer3 = RGCNLayer(hidden_channels, latent_dim)
-
-#     def forward(self, data):
-#         """
-#         Forward pass throguh R-GCN model.
-
-#         Parameters
-#         ----------
-#         data:
-
-
-#         Returns
-#         -------
-#         z_node:
-
-#         z_graph:
-
-#         """
-#         x, edge_index, edge_type, edge_attr = (
-#             data.x,
-#             data.edge_index,
-#             data.edge_type,
-#             data.edge_attr,
-#         )
-
-#         # Pass through model
-#         h = self.layer1(x, edge_index, edge_type, edge_attr)
-#         h = F.relu(h)
-#         h = F.dropout(h, p=self.dropout, training=self.training)
-
-#         h = self.layer2(h, edge_index, edge_type, edge_attr)
-#         h = F.relu(h)
-#         h = F.dropout(h, p=self.dropout, training=self.training)
-
-#         z_node = self.layer3(h, edge_index, edge_type, edge_attr)
-#         z_graph = global_mean_pool(z_node, data.batch)
-
-#         return z_node, z_graph
 
 
 class GraphClassifier(nn.Module):
@@ -216,66 +160,6 @@ class GraphClassifier(nn.Module):
 
         """
         return self.criterion(pred, true)
-
-
-# class GraphClassifier(nn.Module):
-#     def __init__(self, in_dim, n_classes):
-#         """
-#         Define a graph classifier to predict a graph class based on its graph-level embedding from a GNN model.
-
-#         Parameters
-#         ----------
-#         in_dim: int
-#             Dimension of the graph-level embedding (i.e. latent dimension from GNN model).
-#         n_classes: int
-#             Number of classes in the graph dataset.
-#         """
-#         super().__init__()
-#         # Layers definition
-#         self.layer1 = nn.Linear(in_dim, in_dim // 2)
-#         self.actfn = nn.ReLU()
-#         self.layer2 = nn.Linear(in_dim // 2, n_classes)
-#         # Loss criterion
-#         self.criterion = nn.CrossEntropyLoss()
-
-#     def forward(self, x):
-#         """
-#         Forward pass through classifier.
-
-#         Parameters
-#         ----------
-#         x:
-
-#         Returns
-#         -------
-
-#         """
-#         # Pass first layer
-#         h = self.layer1(x)
-#         # Activation function
-#         h = self.actfn(h)
-#         # Pass second layer
-#         logits = self.layer2(h)
-
-#         return logits
-
-#     def loss(self, pred, true):
-#         """
-#         Define loss function for graph classifier
-
-#         Parameters
-#         ----------
-#         pred:
-
-#         true:
-
-
-#         Returns
-#         -------
-
-#         """
-
-#         return self.criterion(pred, true)
 
 
 class EdgePredictor(nn.Module):
@@ -327,64 +211,6 @@ class EdgePredictor(nn.Module):
         return self.criterion(pred, true)
 
 
-# class EdgePredictor(nn.Module):
-#     def __init__(self, in_dim):
-#         """
-#         Define an edge predictor to infer the edge weight between two nodes based on its node-level embedding from a GNN model.
-
-#         Parameters
-#         ----------
-#         in_dim: int
-#             Dimension of the node-level embedding (i.e. latent dimension from GNN model).
-#         """
-#         super().__init__()
-#         # Layers definition
-#         self.layer1 = nn.Linear(in_dim * 2, in_dim)
-#         self.actfn = nn.ReLU()
-#         self.layer2 = nn.Linear(in_dim, 1)
-#         # Loss criterion
-#         self.criterion = nn.MSELoss()
-
-#     def forward(self, nodes):
-#         """
-#         Forward pass through predictor.
-
-#         Parameters
-#         ----------
-#         nodes:
-
-
-#         Returns
-#         -------
-
-#         """
-#         # Pass first layer
-#         h = self.layer1(nodes)
-#         # Activation function
-#         h = self.actfn(h)
-#         # Pass second layer
-#         weight = self.layer2(h)
-
-#         return weight.squeeze()
-
-#     def loss(self, pred, true):
-#         """
-#         Define loss function for edge predictor.
-
-#         Parameters
-#         ----------
-#         pred:
-
-#         true:
-
-
-#         Returns
-#         -------
-
-#         """
-#         return self.criterion(pred, true)
-
-
 class GNNModel(nn.Module):
     def __init__(
         self,
@@ -431,23 +257,16 @@ class GNNModel(nn.Module):
         # Defining GNN
         if gnn_type == "RGCN":
             gnn_net = [in_channels] + gnn_net + [latent_dim]
-            modules = []
+            gnn_layers = nn.ModuleList()
             for i in range(len(gnn_net) - 1):
-                if i < len(gnn_net) - 2:
-                    modules.append(
-                        RGCNLayer(gnn_net[i], gnn_net[i + 1])
-                    )  # RGCNLayer(in_channels, out_channels)
-                    modules.append(gnn_actfn)
-                    modules.append(nn.Dropout(gnn_dropout))
-                else:
-                    modules.append(RGCNLayer(gnn_net[i], gnn_net[i + 1]))
+                gnn_layers.append(RGCNLayer(gnn_net[i], gnn_net[i + 1]))
 
         else:
             raise NotImplementedError(
                 f"GNN type {gnn_type} not implemented. Please choose from ['RGCN']."
             )
 
-        self.gnn = GNN(nn.Sequential(*modules))
+        self.gnn = GNN(gnn_layers, gnn_actfn, gnn_dropout)
 
         # Defining classifier
         classifier_net = [latent_dim] + classifier_net + [n_classes]
