@@ -57,3 +57,6 @@ cover/
 
 # biomaRt package cache file
 .pybiomart.sqlite
+
+# torch weights
+*.pt
