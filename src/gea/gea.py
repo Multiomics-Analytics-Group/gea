@@ -1,4 +1,9 @@
 import random
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import umap
 import torch
 import torch.nn.functional as F
 from torch import nn, optim
@@ -309,6 +314,34 @@ class GNNModel(nn.Module):
         pred_class = self.classifier(z_graph)
 
         return pred_edge, pred_class
+
+    def plot_graph_embeddings(self, data, label_names=None, method="umap"):
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        print("Extracting Embeddings for UMAP...")
+        self.gnn.eval()
+        embeddings = []
+        labels = []
+
+        with torch.no_grad():
+            for batch in data:
+                batch = batch.to(device)
+                _, z_graph = self.gnn(batch)
+                embeddings.append(z_graph.cpu().numpy())
+                labels.extend([label_names[y] for y in batch.y.cpu().numpy()])
+
+        X_emb = np.concatenate(embeddings, axis=0)
+
+        reducer = umap.UMAP(n_components=2, random_state=42)
+        umap_coords = reducer.fit_transform(X_emb)
+
+        df_plot = pd.DataFrame(umap_coords, columns=["UMAP1", "UMAP2"])
+        df_plot["Label"] = labels
+
+        plt.figure(figsize=(8, 6))
+        sns.scatterplot(data=df_plot, x="UMAP1", y="UMAP2", hue="Label", alpha=0.8)
+        plt.show()
 
 
 def train_gnn(
