@@ -557,4 +557,68 @@ def train_sae_node(
     progress_bar.close()
 
 
+def train_sae_edge(
+    sae_model,
+    gnn_model,
+    train_loader,
+    device,
+    epochs=1000,
+    lr=1e-3,
+    w_l2=1e-4,
+):
+
+    sae_model.train()
+    gnn_model.eval()
+
+    optimizer = optim.Adam(sae_model.parameters(), lr=lr, weight_decay=w_l2)
+
+    total_steps = len(train_loader) * epochs
+
+    progress_bar = tqdm(
+        range(total_steps),
+        desc="Training SAE model",
+    )
+
+    for epoch in range(epochs):
+
+        for batch in train_loader:
+            batch = batch.to(device)
+            optimizer.zero_grad()
+
+            # Extract edge-level embeddings
+            with torch.no_grad():
+                z_node, _ = gnn_model.encode(
+                    batch
+                )  # z_node shape: [total_nodes_in_batch, latent_dim]
+
+                # Construct edge embeddings
+                edge_index = batch.edge_index
+                src, dst = edge_index[0], edge_index[1]
+
+                # z_edge = mean(z_node[src], z_node[dst])
+                z_edge = (
+                    z_node[src] + z_node[dst]
+                ) / 2.0  # z_edge shape: [total_edges_in_batch, latent_dim]
+
+            # Forward pass through SAE
+            z, pred_z_edge = sae_model(z_edge)
+
+            # Calculate loss
+            loss = sae_model.loss(pred_z_edge, z_edge, z)
+
+            # Backpropagation and optimization step
+            loss.backward()
+            optimizer.step()
+            sae_model.normalize_weights()  # normalize decoder weights to prevent collapse to zero and encourage diversity in learned features
+
+            # Update progress bar
+            progress_bar.set_postfix(
+                total_loss=f"{loss.item():.4f}",
+                epoch=f"{epoch}/{epochs + 1}",
+            )
+            progress_bar.update()
+
+    progress_bar.close()
+
+
 # class GEA(nn.Module):
