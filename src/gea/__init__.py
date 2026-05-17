@@ -3,3 +3,24 @@
 from importlib import metadata
 
 __version__ = metadata.version("gea")
+
+from gea.analysis import (
+    # Activation extraction
+    extract_graph_activations,
+    extract_node_activations,
+    extract_edge_activations,
+    # DFA
+    filter_dead_features,
+    differential_feature_activation,
+    volcano_plot,
+    plot_feature_activation_heatmap,
+    feature_coactivation,
+    # Explainability pipeline
+    attribute_nodes_to_graph_feature,
+    get_top_node_concepts,
+    get_top_edge_concepts,
+    explain_graph_feature,
+    # Lower-level subgraph utilities
+    trace_feature_to_subgraph,
+    plot_feature_subgraph,
+)
