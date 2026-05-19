@@ -60,3 +60,8 @@ cover/
 
 # torch weights
 *.pt
+
+# Files generated while running GEA
+**.txt
+**.fa
+**.gz
