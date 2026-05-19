@@ -4,6 +4,8 @@ from importlib import metadata
 
 __version__ = metadata.version("gea")
 
+from gea.utils import compress_embeddings_pca
+
 from gea.analysis import (
     # Activation extraction
     extract_graph_activations,
@@ -23,4 +25,8 @@ from gea.analysis import (
     # Lower-level subgraph utilities
     trace_feature_to_subgraph,
     plot_feature_subgraph,
+    # Gene set extraction & enrichment
+    get_attribution_gene_set,
+    get_concept_gene_set,
+    run_enrichment,
 )
