@@ -38,59 +38,79 @@ def load_pubchem_network():
 
 
 def load_string_ppi_network(
-    gene_list: list, species=9606, conf_score=600, api_url="https://string-db.org/api"
+    gene_list: list,
+    species: int = 9606,
+    conf_score: int = 600,
+    api_url: str = "https://string-db.org/api",
+    ensembl_to_symbol: dict = None,
 ) -> pd.DataFrame:
     """
-    Function used to extract a protein-protein interaction (PPI) network from the STRING database for a given list of genes.
+    Extract a protein-protein interaction network from STRING for a list of genes.
 
     Parameters
     ----------
-    gene_list: list
-        A list of gene symbols for which to extract the PPI network.
-    species: int
-        The NCBI taxonomy identifier for the species of interest (default is 9606 for human).
-    conf_score: int
-        The confidence score threshold for including interactions (default is 600, highest is 900).
-    api_url: str
-        The base URL for the STRING database API (default is "https://string-db.org/api").
+    gene_list : list
+        Gene identifiers to query. Can be gene symbols (default) OR Ensembl gene
+        IDs when ensembl_to_symbol is provided.
+    species : int
+        NCBI taxonomy ID (default 9606 = human).
+    conf_score : int
+        Minimum combined confidence score (0–1000). Default 600.
+    api_url : str
+        STRING API base URL.
+    ensembl_to_symbol : dict, optional
+        Mapping from Ensembl gene ID → gene symbol, as returned by
+        filter_protein_coding. When provided, gene_list is assumed to contain
+        Ensembl IDs: they are translated to symbols for the STRING query, and
+        the returned DataFrame is enriched with 'ensemblId_A' / 'ensemblId_B'
+        columns so that downstream steps can work with Ensembl IDs directly.
 
     Returns
     -------
     pd.DataFrame
-        A DataFrame containing the PPI network with columns for the interacting proteins and their confidence scores.
+        STRING network with columns including preferredName_A, preferredName_B,
+        score. If ensembl_to_symbol was given, also includes ensemblId_A and
+        ensemblId_B columns.
     """
-    # API method to get network
-    method = "network"
-    # Format list of genes into single string
-    id_string = "\n".join(gene_list)
-    # Request URL construct
-    request_url = "/".join([api_url, "tsv", method])
+    if ensembl_to_symbol is not None:
+        # Build reverse map and translate to symbols for the query
+        symbol_to_ensembl = {v: k for k, v in ensembl_to_symbol.items()}
+        query_symbols = [
+            ensembl_to_symbol[g] for g in gene_list if g in ensembl_to_symbol
+        ]
+    else:
+        query_symbols = gene_list
+        symbol_to_ensembl = None
 
-    # Parameters for the API call
+    request_url = "/".join([api_url, "tsv", "network"])
     params = {
-        "identifiers": id_string,
+        "identifiers": "\n".join(query_symbols),
         "species": species,
         "required_score": conf_score,
         "caller_identity": "script",
     }
 
-    # Making API call
     try:
         response = requests.post(request_url, data=params)
         response.raise_for_status()
-
-        # io.StringIO function treats the response text as file
         ppi_network = pd.read_csv(io.StringIO(response.text), sep="\t")
 
         print("Successfully retrieved PPI network!")
         print(f"Found {len(ppi_network)} interactions.")
-        print(ppi_network.head())
+
+        # Add Ensembl ID columns so filter_ppi_nodes can use them
+        if symbol_to_ensembl is not None:
+            ppi_network["ensemblId_A"] = ppi_network["preferredName_A"].map(
+                symbol_to_ensembl
+            )
+            ppi_network["ensemblId_B"] = ppi_network["preferredName_B"].map(
+                symbol_to_ensembl
+            )
 
         return ppi_network
 
     except requests.exceptions.HTTPError as err:
         print(f"HTTP Error: {err}")
-
     except Exception as err:
         print(f"An error occurred: {err}")
 

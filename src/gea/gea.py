@@ -26,14 +26,16 @@ class GNN(nn.Module):
         self.gnn_actfn = gnn_actfn
         self.gnn_dropout = nn.Dropout(gnn_dropout)
 
-    def forward(self, data):
+    def forward(self, data, x=None):
         """
         Define a forward pass through the RGCN model.
 
         Parameters
         ----------
         data:
-
+        x : torch.Tensor, optional
+            Pre-projected node features. When provided, used instead of data.x
+            so that GNNModel can apply input_proj before the RGCN stack.
 
         Returns
         -------
@@ -42,8 +44,8 @@ class GNN(nn.Module):
         z_graph:
 
         """
-        x, edge_index, edge_type, edge_weight = (
-            data.x,
+        x = data.x if x is None else x
+        edge_index, edge_type, edge_weight = (
             data.edge_index,
             data.edge_type,
             data.edge_attr,
@@ -226,6 +228,7 @@ class GNNModel(nn.Module):
         gnn_actfn=nn.ReLU(),
         gnn_dropout=0.2,
         latent_dim=128,
+        input_proj_dim=128,
         classifier_net=[64],
         classifier_actfn=nn.ReLU(),
         predictor_net=[128],
@@ -248,6 +251,18 @@ class GNNModel(nn.Module):
 
         latent_dim: int
 
+        input_proj_dim: int or None
+            If set, node features are split into expression and embedding parts.
+            The embedding part (x[:, 1:], i.e. all dims except the first) is
+            projected with Linear(in_channels-1, input_proj_dim-1) + ReLU, then
+            the expression scalar (x[:, 0:1]) is concatenated back explicitly:
+
+                x_proj = cat([expr, proj(esm_emb)], dim=1)  → [N, input_proj_dim]
+
+            Keeping expression as a dedicated dimension ensures it is never
+            compressed away by the projection weights being dominated by the
+            1280 ESM-2 dimensions. Set to None to pass raw features directly.
+
         classifier_net: list
 
         classifier_actfn: nn.Module
@@ -259,9 +274,23 @@ class GNNModel(nn.Module):
         """
         super().__init__()
 
+        # Input projection: compress embedding dims, preserve expression explicitly.
+        # x layout from gene_networks_to_pyg: [expr (1) | static_embedding (in_channels-1)]
+        if input_proj_dim is not None and in_channels != input_proj_dim:
+            self.input_proj = nn.Sequential(
+                nn.Linear(in_channels - 1, input_proj_dim - 1),
+                nn.ReLU(),
+            )
+            self._proj_active = True
+            gnn_in = input_proj_dim
+        else:
+            self.input_proj = nn.Identity()
+            self._proj_active = False
+            gnn_in = in_channels
+
         # Defining GNN
         if gnn_type == "RGCN":
-            gnn_net = [in_channels] + gnn_net + [latent_dim]
+            gnn_net = [gnn_in] + gnn_net + [latent_dim]
             gnn_layers = nn.ModuleList()
             for i in range(len(gnn_net) - 1):
                 gnn_layers.append(RGCNLayer(gnn_net[i], gnn_net[i + 1]))
@@ -297,13 +326,20 @@ class GNNModel(nn.Module):
 
         self.edge_predictor = EdgePredictor(nn.Sequential(*modules))
 
+    def _project(self, x):
+        if self._proj_active:
+            expr = x[:, :1]                           # [N, 1]  — varies per sample
+            emb  = x[:, 1:]                           # [N, in_channels-1]  — static per gene
+            return torch.cat([expr, self.input_proj(emb)], dim=1)  # [N, input_proj_dim]
+        return self.input_proj(x)                     # Identity when projection disabled
+
     def encode(self, data):
 
-        return self.gnn(data)
+        return self.gnn(data, x=self._project(data.x))
 
     def forward(self, data):
 
-        z_node, z_graph = self.gnn(data)
+        z_node, z_graph = self.gnn(data, x=self._project(data.x))
 
         edge_index = data.edge_index
 
@@ -315,32 +351,67 @@ class GNNModel(nn.Module):
 
         return pred_edge, pred_class
 
-    def plot_graph_embeddings(self, data, label_names=None, method="umap"):
+    def plot_graph_embeddings(self, data, label_names=None, method="umap",
+                              test_data=None):
+        """
+        Plot a UMAP of graph-level embeddings.
 
+        Parameters
+        ----------
+        data : DataLoader
+            Primary loader (training set, or all graphs if no split).
+        label_names : list, optional
+            Maps integer y labels to display strings. Must be indexed by label int.
+        test_data : DataLoader, optional
+            Held-out test loader. When provided its graphs are encoded alongside
+            training graphs, UMAP is fit on all points jointly, and train/test
+            are distinguished by marker shape so you can see whether the model
+            generalises without losing the cluster structure that only the full
+            dataset can reveal.
+        """
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        print("Extracting Embeddings for UMAP...")
-        self.gnn.eval()
-        embeddings = []
-        labels = []
+        self.eval()
+        embeddings, labels, splits = [], [], []
 
-        with torch.no_grad():
-            for batch in data:
-                batch = batch.to(device)
-                _, z_graph = self.gnn(batch)
-                embeddings.append(z_graph.cpu().numpy())
-                labels.extend([label_names[y] for y in batch.y.cpu().numpy()])
+        def _collect(loader, split_tag):
+            with torch.no_grad():
+                for batch in loader:
+                    batch = batch.to(device)
+                    _, z_graph = self.encode(batch)
+                    embeddings.append(z_graph.cpu().numpy())
+                    ys = batch.y.cpu().numpy()
+                    labels.extend(
+                        [label_names[y] for y in ys] if label_names else ys.tolist()
+                    )
+                    splits.extend([split_tag] * len(ys))
+
+        _collect(data, "Train")
+        if test_data is not None:
+            _collect(test_data, "Test")
 
         X_emb = np.concatenate(embeddings, axis=0)
-
         reducer = umap.UMAP(n_components=2, random_state=42)
         umap_coords = reducer.fit_transform(X_emb)
 
         df_plot = pd.DataFrame(umap_coords, columns=["UMAP1", "UMAP2"])
         df_plot["Label"] = labels
+        df_plot["Split"] = splits
 
         plt.figure(figsize=(8, 6))
-        sns.scatterplot(data=df_plot, x="UMAP1", y="UMAP2", hue="Label", alpha=0.8)
+        if test_data is not None:
+            sns.scatterplot(
+                data=df_plot, x="UMAP1", y="UMAP2",
+                hue="Label", style="Split",
+                markers={"Train": "o", "Test": "X"},
+                alpha=0.8, s=40,
+            )
+            plt.title("Graph-level GNN embeddings (UMAP) — ○ train  ✕ test")
+        else:
+            sns.scatterplot(data=df_plot, x="UMAP1", y="UMAP2", hue="Label",
+                            alpha=0.8, s=40)
+            plt.title("Graph-level GNN embeddings (UMAP)")
+        plt.tight_layout()
         plt.show()
 
 
@@ -353,8 +424,18 @@ def train_gnn(
     w_l2=1e-4,
     w_classifier=1.0,
     w_edge_pred=0.5,
+    val_loader=None,
 ):
+    """
+    Train the GNN model.
 
+    Parameters
+    ----------
+    val_loader : DataLoader, optional
+        When provided, a full evaluation pass is run at the end of every epoch
+        and val_loss / val_acc are reported in the progress bar. The model is
+        never trained on these batches.
+    """
     model.train()
 
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=w_l2)
@@ -366,7 +447,13 @@ def train_gnn(
         desc="Training GNN model",
     )
 
+    val_acc_display = None
+    val_loss_display = None
+
     for epoch in range(epochs):
+
+        epoch_correct = 0
+        epoch_total = 0
 
         for batch in train_loader:
             batch = batch.to(device)
@@ -376,34 +463,57 @@ def train_gnn(
             batch.y = batch.y.detach()
 
             optimizer.zero_grad()
-            # Prediction
             pred_edge, pred_class = model(batch)
-            # Classifier loss
             class_loss = w_classifier * model.classifier.loss(pred_class, batch.y)
-            # Edge predictor loss
             edge_loss = w_edge_pred * model.edge_predictor.loss(
                 pred_edge, batch.edge_attr
             )
-
             loss = class_loss + edge_loss
-
             loss.backward()
             optimizer.step()
 
-            # Update progress bar
-            progress_bar.set_postfix(
-                total_loss=f"{loss.item():.4f}",
-                class_loss=f"{class_loss.item():.4f}",
-                edge_loss=f"{edge_loss.item():.4f}",
-                epoch=f"{epoch}/{epochs + 1}",
+            preds = pred_class.argmax(dim=-1)
+            epoch_correct += (preds == batch.y).sum().item()
+            epoch_total += batch.y.size(0)
+
+            train_acc = epoch_correct / epoch_total if epoch_total > 0 else 0.0
+            pf = dict(
+                loss=f"{loss.item():.4f}",
+                acc=f"{train_acc:.2%}",
+                epoch=f"{epoch + 1}/{epochs}",
             )
+            if val_acc_display is not None:
+                pf["val_loss"] = f"{val_loss_display:.4f}"
+                pf["val_acc"] = f"{val_acc_display:.2%}"
+            progress_bar.set_postfix(**pf)
             progress_bar.update()
+
+        # ── Validation pass (end of epoch) ────────────────────────────────────
+        if val_loader is not None:
+            model.eval()
+            val_correct, val_total = 0, 0
+            val_loss_sum, val_n_batches = 0.0, 0
+            with torch.no_grad():
+                for vbatch in val_loader:
+                    vbatch = vbatch.to(device)
+                    pred_edge_v, pred_class_v = model(vbatch)
+                    c_loss_v = w_classifier * model.classifier.loss(pred_class_v, vbatch.y)
+                    e_loss_v = w_edge_pred * model.edge_predictor.loss(
+                        pred_edge_v, vbatch.edge_attr
+                    )
+                    val_loss_sum += (c_loss_v + e_loss_v).item()
+                    val_n_batches += 1
+                    val_correct += (pred_class_v.argmax(dim=-1) == vbatch.y).sum().item()
+                    val_total += vbatch.y.size(0)
+            val_acc_display = val_correct / val_total
+            val_loss_display = val_loss_sum / val_n_batches
+            model.train()
 
     progress_bar.close()
 
 
 class ShallowSAE(nn.Module):
-    def __init__(self, in_dim, latent_dim, sparsity_weight=1e-5):
+    def __init__(self, in_dim, latent_dim, sparsity_weight=1e-3):
         """
         Define a shallow sparse autoencoder (SAE) model as implemented in Anthropic's paper "Decomposing Language Models with Dictionary Learning"
 

@@ -98,26 +98,41 @@ def filter_genes(
 
 def filter_ppi_nodes(counts_df: pd.DataFrame, ppi_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Function used to filter the count matrix to include only genes present in the PPI network.
+    Filter the count matrix to include only genes present in the PPI network.
+
+    Supports two identifier modes:
+    - Gene symbols (default): uses the 'preferredName_A' / 'preferredName_B' columns
+      that STRING always returns.
+    - Ensembl IDs: uses the 'ensemblId_A' / 'ensemblId_B' columns that
+      load_string_ppi_network adds when called with ensembl_to_symbol.
+      Rows with missing Ensembl ID mappings (NaN) are skipped.
+
+    The mode is selected automatically based on whether the PPI DataFrame
+    contains Ensembl ID columns.
 
     Parameters
     ----------
-    counts_df: pd.DataFrame
-        A DataFrame containing count data (preferably filtered) with genes as rows and samples as columns.
-    ppi_df: pd.DataFrame
-        A DataFrame containing the PPI network with columns for the interacting proteins.
+    counts_df : pd.DataFrame
+        Count matrix with genes as rows (index = gene symbols OR Ensembl IDs).
+    ppi_df : pd.DataFrame
+        PPI network returned by load_string_ppi_network.
 
     Returns
     -------
     pd.DataFrame
-        A filtered DataFrame containing only genes where proteins are present in the PPI network.
+        Subset of counts_df whose genes appear in the PPI network.
     """
-    # Get unique gene symbols from the PPI network
-    ppi_gene_symbols = set(ppi_df["preferredName_A"]).union(ppi_df["preferredName_B"])
-    # Filter the count matrix to include only genes present in the PPI network
-    gene_data_in_ppi = counts_df[counts_df.index.isin(ppi_gene_symbols)]
+    if "ensemblId_A" in ppi_df.columns and "ensemblId_B" in ppi_df.columns:
+        ppi_gene_ids = (
+            set(ppi_df["ensemblId_A"].dropna())
+            | set(ppi_df["ensemblId_B"].dropna())
+        )
+    else:
+        ppi_gene_ids = (
+            set(ppi_df["preferredName_A"]) | set(ppi_df["preferredName_B"])
+        )
 
-    return gene_data_in_ppi
+    return counts_df[counts_df.index.isin(ppi_gene_ids)]
 
 
 def normalize_counts(counts_df: pd.DataFrame) -> pd.DataFrame:
@@ -419,6 +434,7 @@ def gene_networks_to_pyg(
     joint_data: pd.DataFrame,
     gene_embeddings: torch.Tensor,
     bio_col="source_name",
+    standardize_expr: bool = True,
 ):
     """
     Function that converts sample-specific gene networks into PyG objects for use in graph neural network models.
@@ -433,6 +449,10 @@ def gene_networks_to_pyg(
         A tensor containing pre-trained gene embeddings, where the order of genes corresponds to the columns in joint_data.
     bio_col: str
         The column name in joint_data that contains the biological phenotypes.
+    standardize_expr: bool
+        If True (default), z-score each gene's expression across samples before building
+        node features. This places expression values on the same scale as L2-normalised
+        ESM-2 embeddings and emphasises disease-relevant variation over absolute level.
 
     Returns
     -------
@@ -450,6 +470,11 @@ def gene_networks_to_pyg(
     # Getting mapping for biological phenotypes to integer labels
     bio_map = {lab: i for i, lab in enumerate(sorted(joint_data[bio_col].unique()))}
 
+    # Pre-compute per-gene statistics once for standardization
+    if standardize_expr:
+        gene_mean = norm_data.mean(axis=0).values.astype(np.float32)
+        gene_std = norm_data.std(axis=0).values.astype(np.float32)
+
     data_list = []
     static_embeddings = (
         gene_embeddings.cpu()
@@ -464,7 +489,11 @@ def gene_networks_to_pyg(
             continue  # Skip samples that are not in the normalized data
 
         # 1. Node Features: [Expression (1) + Gene embeddings (hidden_dim)]
-        expr = norm_data.loc[s].values.astype(np.float32).reshape(-1, 1)
+        raw_expr = norm_data.loc[s].values.astype(np.float32)
+        if standardize_expr:
+            expr = ((raw_expr - gene_mean) / (gene_std + 1e-8)).reshape(-1, 1)
+        else:
+            expr = raw_expr.reshape(-1, 1)
         expr_tensor = torch.from_numpy(expr)
         x = torch.cat([expr_tensor, static_embeddings], dim=1)
 

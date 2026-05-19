@@ -126,21 +126,35 @@ def extract_edge_activations(sae_edge, gnn_model, data_loader, device):
 
 # ── Differential Feature Activation ───────────────────────────────────────────
 
-def differential_feature_activation(graph_acts_df, group_a, group_b, method="mannwhitney"):
+def differential_feature_activation(graph_acts_df, group_a, group_b, method="mannwhitney",
+                                     padj_threshold=0.05, lfc_threshold=1.0):
     """
     Test each SAE feature for differential activation between two phenotype groups.
 
     Uses Benjamini-Hochberg FDR correction across all features.
     log2fc is defined as log2(mean_a / mean_b); positive values mean higher in group_a.
 
+    A feature is marked `significant` only when it meets BOTH criteria:
+    - adjusted p-value < padj_threshold  (statistical significance)
+    - |log2fc| >= lfc_threshold           (practical/effect-size significance)
+
+    Requiring both avoids the common trap where near-zero activations produce tiny
+    p-values via a large relative fold-change that is biologically meaningless.
+
     Parameters
     ----------
     graph_acts_df : pd.DataFrame
-        Output of extract_graph_activations. Must have a 'label' column.
+        Output of extract_graph_activations (after filter_dead_features).
+        Must have a 'label' column.
     group_a, group_b : str
         Phenotype labels to compare.
     method : str
         'mannwhitney' (non-parametric, default) or 'ttest'.
+    padj_threshold : float
+        BH-adjusted p-value cutoff (default 0.05).
+    lfc_threshold : float
+        Minimum absolute log2 fold-change to call a feature significant
+        (default 1.0, i.e. 2-fold change). Set to 0 to use only p-value.
 
     Returns
     -------
@@ -167,7 +181,7 @@ def differential_feature_activation(graph_acts_df, group_a, group_b, method="man
     df = pd.DataFrame(rows)
     _, padj, _, _ = multipletests(df["p_value"].values, method="fdr_bh")
     df["p_adjusted"] = padj
-    df["significant"] = df["p_adjusted"] < 0.05
+    df["significant"] = (df["p_adjusted"] < padj_threshold) & (df["log2fc"].abs() >= lfc_threshold)
     return df.sort_values("p_adjusted").reset_index(drop=True)
 
 
@@ -220,7 +234,7 @@ def volcano_plot(dfa_df, group_a, group_b, lfc_threshold=1.0,
 
 # ── Dead Feature Filtering ────────────────────────────────────────────────────
 
-def filter_dead_features(graph_acts_df, min_activation_frac=0.01):
+def filter_dead_features(graph_acts_df, min_activation_frac=0.05):
     """
     Remove SAE features that are active in fewer than min_activation_frac of graphs.
 
@@ -505,10 +519,12 @@ def explain_graph_feature(feature, sae_graph, sae_node, sae_edge, gnn_model,
     )
 
     # ── Level 3: Edge SAE scores + concepts ───────────────────────────────────
-    edge_scores = np.stack([
-        edge_acts_list[i].max(axis=1) for i in top_graph_idx
-    ]).mean(axis=0)
-    shared_edge_index = edge_indices_list[top_graph_idx[0]]
+    # Use only the most-activated graph's edges for subgraph visualization.
+    # Stacking across top-k graphs is not safe: different graphs can have
+    # different edge counts because LIONESS thresholds edges per sample.
+    ref_idx = int(top_graph_idx[0])
+    edge_scores = edge_acts_list[ref_idx].max(axis=1)  # [n_edges_ref]
+    shared_edge_index = edge_indices_list[ref_idx]     # [2, n_edges_ref]
 
     edge_concepts = get_top_edge_concepts(
         feature=feat_col, graph_acts_df=graph_acts_df,
@@ -597,6 +613,160 @@ def explain_graph_feature(feature, sae_graph, sae_node, sae_edge, gnn_model,
     }
 
 
+# ── Gene Set Extraction & Enrichment ─────────────────────────────────────────
+
+def get_attribution_gene_set(
+    feature, sae_graph, gnn_model, data_loader,
+    graph_acts_df, device, gene_names,
+    ensembl_to_symbol=None, top_k=20, top_n=100,
+):
+    """
+    Return the top-n genes most causally responsible for a graph SAE feature firing.
+
+    Uses W_enc projection (contribution = z_node @ W_enc[:, f*] / N) averaged
+    over the top-k most activated graphs. Positive score = gene pushes the
+    embedding toward f* activating; higher magnitude = stronger causal role.
+
+    Parameters
+    ----------
+    feature : int or str
+    sae_graph : ShallowSAE
+    gnn_model : GNNModel
+    data_loader : DataLoader  (shuffle=False)
+    graph_acts_df : pd.DataFrame
+    device : torch.device
+    gene_names : list of str
+        Ordered list of Ensembl IDs matching graph node order.
+    ensembl_to_symbol : dict, optional
+        Ensembl ID → HGNC symbol mapping for labelling.
+    top_k : int
+        Number of most-activated graphs to average over.
+    top_n : int
+        Number of top genes to return.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: gene_id, [symbol,] attribution_score. Sorted descending.
+    """
+    mean_attr, _, _ = attribute_nodes_to_graph_feature(
+        feature=feature, sae_graph=sae_graph, gnn_model=gnn_model,
+        data_loader=data_loader, graph_acts_df=graph_acts_df,
+        device=device, top_k=top_k,
+    )
+    top_idx = np.argsort(mean_attr)[::-1][:top_n]
+    gene_ids = [gene_names[i] for i in top_idx] if gene_names else [str(i) for i in top_idx]
+    df = pd.DataFrame({"gene_id": gene_ids, "attribution_score": mean_attr[top_idx]})
+    if ensembl_to_symbol is not None:
+        df.insert(1, "symbol", df["gene_id"].map(ensembl_to_symbol).fillna(df["gene_id"]))
+    return df
+
+
+def get_concept_gene_set(
+    feature, graph_acts_df, node_acts_list,
+    node_concept, gene_names,
+    ensembl_to_symbol=None, top_k=20, top_n=100,
+):
+    """
+    Return the top-n genes by node SAE concept activation in graphs where f* fires.
+
+    For each graph among the top-k most activated, the activation of a specified
+    node SAE concept is extracted per gene. The mean across those graphs gives a
+    consensus score: which genes most consistently exemplify this learned 'role'
+    whenever feature f* is active.
+
+    This is complementary to W_enc attribution:
+    - Attribution answers "which genes drove f* to fire?"
+    - Concept gene set answers "what shared biological role do those genes play,
+      as learned by the node SAE?"
+
+    Parameters
+    ----------
+    feature : int or str
+    graph_acts_df : pd.DataFrame
+    node_acts_list : list of np.array [n_nodes, n_node_features]
+        Output of extract_node_activations.
+    node_concept : int
+        Index of the node SAE concept dimension to use (e.g. from get_top_node_concepts).
+    gene_names : list of str
+    ensembl_to_symbol : dict, optional
+    top_k : int
+    top_n : int
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: gene_id, [symbol,] concept_score. Sorted descending.
+    """
+    feat_col = f"feature_{feature}" if isinstance(feature, int) else feature
+    top_k_idx = np.argsort(graph_acts_df[feat_col].values)[::-1][:top_k]
+
+    # [top_k, n_genes] → mean over graphs
+    concept_scores = np.stack([
+        node_acts_list[i][:, node_concept] for i in top_k_idx
+    ]).mean(axis=0)
+
+    top_idx = np.argsort(concept_scores)[::-1][:top_n]
+    gene_ids = [gene_names[i] for i in top_idx] if gene_names else [str(i) for i in top_idx]
+    df = pd.DataFrame({"gene_id": gene_ids, "concept_score": concept_scores[top_idx]})
+    if ensembl_to_symbol is not None:
+        df.insert(1, "symbol", df["gene_id"].map(ensembl_to_symbol).fillna(df["gene_id"]))
+    return df
+
+
+def run_enrichment(
+    gene_symbols,
+    gene_sets=None,
+    organism="Human",
+    padj_threshold=0.05,
+):
+    """
+    Gene set overrepresentation analysis via gseapy.enrichr.
+
+    Parameters
+    ----------
+    gene_symbols : list of str
+        HGNC gene symbols to test. Unmapped Ensembl IDs are silently ignored
+        by Enrichr, so filter them out before calling if possible.
+    gene_sets : list of str, optional
+        Enrichr library names. Defaults to KEGG, GO Biological Process, Reactome.
+    organism : str
+        Species string for Enrichr (default 'Human').
+    padj_threshold : float
+        Adjusted p-value cutoff.
+
+    Returns
+    -------
+    pd.DataFrame
+        Significant enriched terms sorted by adjusted p-value, with columns:
+        Gene_set, Term, Overlap, P-value, Adjusted P-value, Genes.
+    """
+    try:
+        import gseapy as gp
+    except ImportError:
+        raise ImportError("Install gseapy: pip install gseapy")
+
+    if gene_sets is None:
+        gene_sets = [
+            "KEGG_2021_Human",
+            "GO_Biological_Process_2021",
+            "Reactome_2022",
+        ]
+
+    res = gp.enrichr(
+        gene_list=list(gene_symbols),
+        gene_sets=gene_sets,
+        organism=organism,
+        outdir=None,
+        cutoff=padj_threshold,
+    )
+
+    df = res.results.copy()
+    sig = df[df["Adjusted P-value"] < padj_threshold].sort_values("Adjusted P-value").reset_index(drop=True)
+    keep = [c for c in ["Gene_set", "Term", "Overlap", "P-value", "Adjusted P-value", "Genes"] if c in sig.columns]
+    return sig[keep]
+
+
 # ── Subgraph Tracing ───────────────────────────────────────────────────────────
 
 def trace_feature_to_subgraph(feature, graph_acts_df, node_acts_list,
@@ -649,11 +819,12 @@ def trace_feature_to_subgraph(feature, graph_acts_df, node_acts_list,
     node_scores = np.stack([agg_fn(node_acts_list[i], axis=1) for i in top_graph_idx])
     mean_node_scores = node_scores.mean(axis=0)
 
-    # Max over edge features, average across top-k graphs
-    edge_scores = np.stack([edge_acts_list[i].max(axis=1) for i in top_graph_idx])
-    mean_edge_scores = edge_scores.mean(axis=0)
-
-    shared_edge_index = edge_indices_list[top_graph_idx[0]]
+    # Edge scores from the most-activated graph only.
+    # Stacking across top-k graphs would crash when edge counts differ per sample
+    # (LIONESS thresholds edges independently for each sample).
+    ref_idx = int(top_graph_idx[0])
+    mean_edge_scores = edge_acts_list[ref_idx].max(axis=1)
+    shared_edge_index = edge_indices_list[ref_idx]
     top_graph_labels = graph_acts_df["label"].values[top_graph_idx]
 
     return mean_node_scores, mean_edge_scores, shared_edge_index, top_graph_idx, top_graph_labels

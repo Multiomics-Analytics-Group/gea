@@ -1,10 +1,179 @@
 # gea/utils.py
+import numpy as np
 import pandas as pd
 import mygene
 from transformers import BertModel
 import torch
 from tqdm import tqdm
 import os
+from typing import Tuple, Dict
+
+
+def filter_protein_coding(
+    gene_data: pd.DataFrame, species: str = "human"
+) -> Tuple[pd.DataFrame, Dict[str, str]]:
+    """
+    Filter a gene expression DataFrame to retain only protein-coding genes,
+    keeping Ensembl gene IDs as the index throughout.
+
+    Unlike ensembl_to_gene, this function does NOT convert to gene symbols —
+    Ensembl IDs remain the primary identifier so that ESM-2 embeddings (which
+    are indexed by Ensembl ID) can be looked up directly.
+
+    Parameters
+    ----------
+    gene_data : pd.DataFrame
+        Raw count matrix with Ensembl gene IDs (ENSG*) as index.
+    species : str
+        Species string passed to mygene (e.g. "human", "mouse").
+
+    Returns
+    -------
+    filtered : pd.DataFrame
+        Subset of gene_data containing only protein-coding genes,
+        with Ensembl IDs retained as index.
+    ensembl_to_symbol : dict
+        Mapping from Ensembl gene ID → HGNC gene symbol, useful for
+        labelling nodes in visualisations and querying STRING.
+    """
+    ensembl_ids = [i for i in gene_data.index if str(i).startswith("ENSG")]
+    mg = mygene.MyGeneInfo()
+    gene_info = mg.querymany(
+        ensembl_ids,
+        scopes="ensembl.gene",
+        fields="symbol,type_of_gene",
+        species=species,
+        as_dataframe=True,
+    )
+    gene_info = gene_info[~gene_info.index.duplicated(keep="first")]
+
+    type_cols = [
+        c for c in gene_info.columns if "type" in c.lower() or "biotype" in c.lower()
+    ]
+    if type_cols:
+        is_protein = (
+            gene_info[type_cols[0]].astype(str).str.lower().str.contains("protein")
+        )
+        gene_info = gene_info[is_protein]
+
+    valid_ensembl = set(gene_info.index)
+    filtered = gene_data.loc[gene_data.index.isin(valid_ensembl)].copy()
+
+    ensembl_to_symbol = (
+        gene_info["symbol"].dropna().loc[gene_info.index.isin(valid_ensembl)].to_dict()
+    )
+
+    print(
+        f"Retained {len(filtered)} protein-coding genes "
+        f"(from {len(ensembl_ids)} Ensembl IDs queried)."
+    )
+    return filtered, ensembl_to_symbol
+
+
+def load_esm_embeddings(
+    esm_file: str, ensembl_ids: list, aggregation: str = "mean"
+) -> torch.Tensor:
+    """
+    Load pre-computed ESM-2 embeddings from a saved file, producing one
+    embedding vector per gene by aggregating over isoforms.
+
+    Expected file format (produced by scripts/get_esm_embeddings.py):
+        { ensembl_id: { transcript_id: tensor([hidden_dim]) } }
+
+    Genes absent from the file receive a random Gaussian embedding so that
+    downstream processing is never blocked by missing entries.
+
+    Parameters
+    ----------
+    esm_file : str
+        Path to the .pt file saved by get_esm_embeddings.py.
+    ensembl_ids : list of str
+        Ordered list of Ensembl gene IDs matching the row order of the
+        normalised counts DataFrame.
+    aggregation : str
+        How to collapse isoform embeddings: 'mean' (default) or 'max'.
+
+    Returns
+    -------
+    torch.Tensor, shape [len(ensembl_ids), hidden_dim]
+    """
+    nested = torch.load(esm_file, weights_only=False)
+
+    # Infer embedding dimension from the first stored entry
+    first_iso = next(iter(next(iter(nested.values())).values()))
+    hidden_dim = first_iso.shape[0]
+
+    embeddings = torch.zeros(len(ensembl_ids), hidden_dim)
+    found = 0
+
+    for i, gene_id in enumerate(tqdm(ensembl_ids, desc="Loading ESM-2 embeddings")):
+        if gene_id in nested:
+            isoform_tensors = torch.stack(list(nested[gene_id].values()))
+            if aggregation == "mean":
+                embeddings[i] = isoform_tensors.mean(dim=0)
+            else:
+                embeddings[i] = isoform_tensors.max(dim=0).values
+            found += 1
+        else:
+            embeddings[i] = torch.randn(hidden_dim)
+
+    print(f"Found ESM-2 embeddings for {found}/{len(ensembl_ids)} genes.")
+
+    # L2-normalise so every gene embedding has unit norm.
+    # ESM-2 CLS tokens vary widely in magnitude; without this the embedding
+    # directions dominate the gradient and the single expression scalar is
+    # effectively invisible to the first GNN layer.
+    norms = embeddings.norm(p=2, dim=1, keepdim=True).clamp(min=1e-12)
+    embeddings = embeddings / norms
+
+    return embeddings
+
+
+def compress_embeddings_pca(
+    embeddings: torch.Tensor,
+    n_components: int = 256,
+    whiten: bool = True,
+) -> torch.Tensor:
+    """
+    Reduce ESM-2 (or any) embedding matrix with PCA, then L2-renormalise.
+
+    Using offline PCA instead of a learned linear projection is preferable for
+    small datasets (~300 graphs): PCA converges on the first call and introduces
+    zero gradient burden, matching the effective dimensionality of Geneformer
+    (256) without requiring the GNN to simultaneously learn the compression.
+
+    Parameters
+    ----------
+    embeddings : torch.Tensor, shape [n_genes, in_dim]
+        L2-normalised gene embeddings (output of load_esm_embeddings).
+    n_components : int
+        Target dimensionality (default: 256, matching Geneformer).
+    whiten : bool
+        If True (default), divide by sqrt of eigenvalue so all components have
+        unit variance — makes the downstream scale uniform regardless of PCA
+        ordering.
+
+    Returns
+    -------
+    torch.Tensor, shape [n_genes, n_components]
+        PCA-compressed, L2-renormalised embeddings.
+    """
+    from sklearn.decomposition import PCA
+
+    X = embeddings.float().numpy()
+    pca = PCA(n_components=n_components, whiten=whiten)
+    X_pca = pca.fit_transform(X).astype(np.float32)
+
+    result = torch.from_numpy(X_pca)
+    norms = result.norm(p=2, dim=1, keepdim=True).clamp(min=1e-12)
+    result = result / norms
+
+    explained = pca.explained_variance_ratio_.sum()
+    print(
+        f"PCA: {embeddings.shape[1]}→{n_components} dims, "
+        f"{explained:.1%} variance retained."
+    )
+    return result
 
 
 def query_biomart(attributes, attempts=10):
@@ -92,24 +261,25 @@ def get_gene_list(gene_data: pd.DataFrame) -> list:
     return gene_data.index.tolist()
 
 
-def get_ppi_edges(ppi_df: pd.DataFrame) -> list:
+def get_ppi_edges(ppi_df: pd.DataFrame) -> set:
     """
-    Function used to get a list of gene symbols from a DataFrame.
+    Return a set of (id_a, id_b) tuples representing PPI edges.
 
-    Parameters
-    ----------
-    ppi_df: pd.DataFrame
-        A DataFrame containing PPI information with columns "preferredName_A" and "preferredName_B".
-
-    Returns
-    -------
-    list
-        A list of tuples representing the edges in the PPI network.
+    Uses Ensembl ID columns ('ensemblId_A' / 'ensemblId_B') when present —
+    as added by load_string_ppi_network when called with ensembl_to_symbol —
+    and falls back to gene-symbol columns ('preferredName_A' / 'preferredName_B')
+    otherwise. Rows with NaN identifiers are skipped.
     """
+    if "ensemblId_A" in ppi_df.columns and "ensemblId_B" in ppi_df.columns:
+        col_a, col_b = "ensemblId_A", "ensemblId_B"
+    else:
+        col_a, col_b = "preferredName_A", "preferredName_B"
+
     ppi_edges = set()
     for _, row in ppi_df.iterrows():
-        edge = tuple(sorted((row["preferredName_A"], row["preferredName_B"])))
-        ppi_edges.add(edge)
+        a, b = row[col_a], row[col_b]
+        if pd.notna(a) and pd.notna(b):
+            ppi_edges.add(tuple(sorted((a, b))))
 
     return ppi_edges
 
