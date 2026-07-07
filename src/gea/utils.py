@@ -161,7 +161,7 @@ def compress_embeddings_pca(
     from sklearn.decomposition import PCA
 
     X = embeddings.float().numpy()
-    pca = PCA(n_components=n_components, whiten=whiten)
+    pca = PCA(n_components=n_components, whiten=whiten, random_state=42)
     X_pca = pca.fit_transform(X).astype(np.float32)
 
     result = torch.from_numpy(X_pca)

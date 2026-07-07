@@ -186,12 +186,19 @@ def differential_feature_activation(graph_acts_df, group_a, group_b, method="man
 
 
 def volcano_plot(dfa_df, group_a, group_b, lfc_threshold=1.0,
-                 padj_threshold=0.05, top_n=15, ax=None):
+                 padj_threshold=0.05, top_n=15, feature_labels=None, ax=None):
     """
     Volcano plot of differential SAE feature activations.
 
     Points in red are higher in group_a; in blue higher in group_b.
     Top-N most significant features are labelled.
+
+    Parameters
+    ----------
+    feature_labels : dict, optional
+        {feature_col: label_string} — if provided, labels replace raw feature
+        names in point annotations. Useful for showing top gene symbols.
+        Produced by ``label_features_by_genes``.
 
     Returns
     -------
@@ -204,30 +211,42 @@ def volcano_plot(dfa_df, group_a, group_b, lfc_threshold=1.0,
     is_up_b = (df["log2fc"] < -lfc_threshold) & (df["p_adjusted"] < padj_threshold)
 
     if ax is None:
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=(9, 6))
     else:
         fig = ax.get_figure()
 
     ax.scatter(df.loc[~is_up_a & ~is_up_b, "log2fc"],
                df.loc[~is_up_a & ~is_up_b, "neg_log10_padj"],
-               c="grey", alpha=0.4, s=18, label="n.s.")
+               c="grey", alpha=0.4, s=20, label="n.s.")
     ax.scatter(df.loc[is_up_a, "log2fc"], df.loc[is_up_a, "neg_log10_padj"],
-               c="tomato", alpha=0.7, s=25, label=f"Higher in {group_a}")
+               c="tomato", alpha=0.7, s=28, label=f"Higher in {group_a}")
     ax.scatter(df.loc[is_up_b, "log2fc"], df.loc[is_up_b, "neg_log10_padj"],
-               c="steelblue", alpha=0.7, s=25, label=f"Higher in {group_b}")
+               c="steelblue", alpha=0.7, s=28, label=f"Higher in {group_b}")
 
     top = df[is_up_a | is_up_b].nsmallest(top_n, "p_adjusted")
+    texts = []
     for _, row in top.iterrows():
-        ax.annotate(row["feature"], (row["log2fc"], row["neg_log10_padj"]),
-                    fontsize=7, alpha=0.85, xytext=(3, 3), textcoords="offset points")
+        label = (feature_labels.get(row["feature"], row["feature"])
+                 if feature_labels else row["feature"])
+        texts.append(ax.text(row["log2fc"], row["neg_log10_padj"], label,
+                             fontsize=9, alpha=0.9))
+
+    try:
+        from adjustText import adjust_text
+        adjust_text(texts, ax=ax,
+                    arrowprops=dict(arrowstyle="-", color="grey", lw=0.6, alpha=0.7),
+                    expand=(1.2, 1.4), force_text=(0.5, 0.8))
+    except ImportError:
+        pass  # install adjustText for non-overlapping labels: pip install adjustText
 
     ax.axvline(lfc_threshold, ls="--", c="black", alpha=0.3, lw=1)
     ax.axvline(-lfc_threshold, ls="--", c="black", alpha=0.3, lw=1)
     ax.axhline(-np.log10(padj_threshold), ls="--", c="black", alpha=0.3, lw=1)
-    ax.set_xlabel(f"log₂ fold change ({group_a} / {group_b})")
-    ax.set_ylabel("−log₁₀(adjusted p-value)")
-    ax.set_title(f"Differential Feature Activation: {group_a} vs {group_b}")
-    ax.legend(framealpha=0.7)
+    ax.set_xlabel(f"log₂ fold change ({group_a} / {group_b})", fontsize=12)
+    ax.set_ylabel("−log₁₀(adjusted p-value)", fontsize=12)
+    ax.set_title(f"Differential Feature Activation: {group_a} vs {group_b}", fontsize=13)
+    ax.tick_params(axis="both", labelsize=11)
+    ax.legend(framealpha=0.7, fontsize=10)
     fig.tight_layout()
     return fig, ax
 
@@ -451,7 +470,8 @@ def feature_coactivation(graph_acts_df, feature_cols=None, figsize=(10, 8)):
 def explain_graph_feature(feature, sae_graph, sae_node, sae_edge, gnn_model,
                           data_loader, graph_acts_df, node_acts_list,
                           edge_acts_list, edge_indices_list, device,
-                          gene_names=None, top_k=20, top_n_nodes=25,
+                          gene_names=None, ensembl_to_symbol=None,
+                          top_k=20, top_n_nodes=25,
                           top_n_edges=40, top_n_concepts=10, figsize=(18, 7)):
     """
     Full three-level GEA explainability pipeline for a single graph-level SAE feature.
@@ -544,7 +564,12 @@ def explain_graph_feature(feature, sae_graph, sae_node, sae_edge, gnn_model,
 
     # Panel 1: subgraph — node color = W_enc attribution, edge color = edge SAE
     n_nodes = len(node_attr)
-    label_map = {i: (gene_names[i] if gene_names else str(i)) for i in range(n_nodes)}
+    def _node_label(i):
+        raw = gene_names[i] if gene_names else str(i)
+        if ensembl_to_symbol:
+            return ensembl_to_symbol.get(raw, raw)
+        return raw
+    label_map = {i: _node_label(i) for i in range(n_nodes)}
     G = nx.Graph()
     for i in range(n_nodes):
         G.add_node(i, score=float(node_attr[i]))
@@ -767,6 +792,48 @@ def run_enrichment(
     return sig[keep]
 
 
+def label_features_by_genes(
+    features, sae_graph, gnn_model, data_loader, graph_acts_df,
+    device, gene_names, ensembl_to_symbol=None, top_k=20, top_n=3,
+):
+    """
+    For each SAE feature, return a short human-readable label made of the top-n
+    attributed gene symbols. Designed to annotate volcano plot points.
+
+    Parameters
+    ----------
+    features : list of str
+        Feature column names (e.g. from dfa_df["feature"]).
+    sae_graph, gnn_model, data_loader, graph_acts_df, device
+        Same arguments as attribute_nodes_to_graph_feature.
+    gene_names : list of str
+        Ordered Ensembl IDs matching graph node order.
+    ensembl_to_symbol : dict, optional
+        Ensembl ID → HGNC symbol. If None, Ensembl IDs are used as labels.
+    top_k : int
+        Graphs to average attribution over.
+    top_n : int
+        Number of genes per label (default 3).
+
+    Returns
+    -------
+    dict  { feature_col: "GENE1 / GENE2 / GENE3" }
+    """
+    labels = {}
+    for feat in features:
+        feat_col = f"feature_{feat}" if isinstance(feat, int) else feat
+        mean_attr, _, _ = attribute_nodes_to_graph_feature(
+            feature=feat_col, sae_graph=sae_graph, gnn_model=gnn_model,
+            data_loader=data_loader, graph_acts_df=graph_acts_df,
+            device=device, top_k=top_k,
+        )
+        top_idx = np.argsort(mean_attr)[::-1][:top_n]
+        gene_ids = [gene_names[i] for i in top_idx] if gene_names else [str(i) for i in top_idx]
+        syms = [ensembl_to_symbol.get(g, g) for g in gene_ids] if ensembl_to_symbol else gene_ids
+        labels[feat_col] = " / ".join(syms)
+    return labels
+
+
 # ── Subgraph Tracing ───────────────────────────────────────────────────────────
 
 def trace_feature_to_subgraph(feature, graph_acts_df, node_acts_list,
@@ -833,6 +900,7 @@ def trace_feature_to_subgraph(feature, graph_acts_df, node_acts_list,
 # ── Visualization ──────────────────────────────────────────────────────────────
 
 def plot_feature_subgraph(node_scores, edge_scores, edge_index, gene_names=None,
+                          ensembl_to_symbol=None,
                           top_n_nodes=25, top_n_edges=40, title="", figsize=(12, 10)):
     """
     Visualize the feature-associated subgraph.
@@ -860,7 +928,12 @@ def plot_feature_subgraph(node_scores, edge_scores, edge_index, gene_names=None,
         subgraph is a networkx.Graph of the visible nodes/edges.
     """
     n_nodes = len(node_scores)
-    label_map = {i: (gene_names[i] if gene_names else str(i)) for i in range(n_nodes)}
+    def _node_label(i):
+        raw = gene_names[i] if gene_names else str(i)
+        if ensembl_to_symbol:
+            return ensembl_to_symbol.get(raw, raw)
+        return raw
+    label_map = {i: _node_label(i) for i in range(n_nodes)}
 
     G = nx.Graph()
     for i in range(n_nodes):
@@ -941,8 +1014,9 @@ def plot_feature_activation_heatmap(graph_acts_df, features, label_col="label",
         cmap="viridis", figsize=figsize,
         yticklabels=False, xticklabels=True,
     )
-    g.ax_heatmap.set_xlabel("SAE features")
-    g.ax_heatmap.set_ylabel("Samples")
+    g.ax_heatmap.set_xlabel("SAE features", fontsize=12)
+    g.ax_heatmap.set_ylabel("Samples", fontsize=12)
+    g.ax_heatmap.tick_params(axis="x", labelsize=10, rotation=90)
 
     handles = [plt.Rectangle((0, 0), 1, 1, color=label_colors[l]) for l in unique_labels]
     g.ax_col_dendrogram.legend(handles, unique_labels, loc="center", ncol=len(unique_labels),

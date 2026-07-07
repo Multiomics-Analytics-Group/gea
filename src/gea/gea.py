@@ -11,6 +11,22 @@ from torch_geometric.nn import GCNConv, global_mean_pool
 from tqdm import tqdm
 
 
+def set_seed(seed: int = 42) -> None:
+    """
+    Set all random seeds for reproducibility across Python, NumPy, and PyTorch.
+
+    Call this once before constructing any model or data loader.
+    cuDNN is set to deterministic mode so convolutional ops are reproducible
+    at a small performance cost.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 class GNN(nn.Module):
     def __init__(self, gnn_layers, gnn_actfn, gnn_dropout):
         """
