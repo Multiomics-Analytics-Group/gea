@@ -434,6 +434,7 @@ def gene_networks_to_pyg(
     joint_data: pd.DataFrame,
     gene_embeddings: torch.Tensor,
     bio_col="source_name",
+    bio_col2=None,
     standardize_expr: bool = True,
 ):
     """
@@ -449,6 +450,10 @@ def gene_networks_to_pyg(
         A tensor containing pre-trained gene embeddings, where the order of genes corresponds to the columns in joint_data.
     bio_col: str
         The column name in joint_data that contains the biological phenotypes.
+    bio_col2: str, optional
+        Optional second column in joint_data providing a second graph-level label
+        (e.g. cell type). When given, each Data object also gets a ``y_ct`` attribute
+        with the integer-encoded value, enabling a second classification objective.
     standardize_expr: bool
         If True (default), z-score each gene's expression across samples before building
         node features. This places expression values on the same scale as L2-normalised
@@ -469,6 +474,10 @@ def gene_networks_to_pyg(
     bio_to_source = joint_data[bio_col].to_dict()
     # Getting mapping for biological phenotypes to integer labels
     bio_map = {lab: i for i, lab in enumerate(sorted(joint_data[bio_col].unique()))}
+    # Optional second label (e.g. cell type) → integer mapping
+    if bio_col2 is not None:
+        bio2_to_source = joint_data[bio_col2].to_dict()
+        bio2_map = {lab: i for i, lab in enumerate(sorted(joint_data[bio_col2].unique()))}
 
     # Pre-compute per-gene statistics once for standardization
     if standardize_expr:
@@ -533,6 +542,10 @@ def gene_networks_to_pyg(
         # 4. Assign label based on biological phenotype
         src = bio_to_source[s]
         data.y = torch.tensor(bio_map[src], dtype=torch.long)
+
+        # 4b. Optional second label (e.g. cell type)
+        if bio_col2 is not None:
+            data.y_ct = torch.tensor(bio2_map[bio2_to_source[s]], dtype=torch.long)
 
         data_list.append(data)
 
