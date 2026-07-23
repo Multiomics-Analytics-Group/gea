@@ -239,6 +239,7 @@ class GNNModel(nn.Module):
         self,
         in_channels,
         n_classes,
+        n_classes_ct=None,
         gnn_type="RGCN",
         gnn_net=[256, 256],
         gnn_actfn=nn.ReLU(),
@@ -258,6 +259,12 @@ class GNNModel(nn.Module):
         in_channels: int
 
         n_classes: int
+
+        n_classes_ct: int or None
+            If set, adds a second graph-level classification head (e.g. for cell
+            type) on top of the shared graph embedding, enabling a multi-task
+            objective. When None (default) only the primary phenotype head exists
+            and the model behaves exactly as before.
 
         gnn_net: list
 
@@ -330,6 +337,22 @@ class GNNModel(nn.Module):
 
         self.classifier = GraphClassifier(nn.Sequential(*modules))
 
+        # Optional second graph-level classifier (e.g. cell type). Backward compatible:
+        # when n_classes_ct is None no head is built and forward returns None for it.
+        # Reuses the same hidden architecture as the primary phenotype head.
+        self.n_classes_ct = n_classes_ct
+        if n_classes_ct is not None:
+            ct_hidden = classifier_net[1:-1]  # hidden layer sizes of the primary head
+            ct_net = [latent_dim] + list(ct_hidden) + [n_classes_ct]
+            modules = []
+            for i in range(len(ct_net) - 1):
+                modules.append(nn.Linear(ct_net[i], ct_net[i + 1]))
+                if i < len(ct_net) - 2:
+                    modules.append(classifier_actfn)
+            self.classifier_ct = GraphClassifier(nn.Sequential(*modules))
+        else:
+            self.classifier_ct = None
+
         # Defining edge predictor
         predictor_net = [latent_dim * 2] + predictor_net + [1]
         modules = []
@@ -364,8 +387,11 @@ class GNNModel(nn.Module):
         pred_edge = self.edge_predictor(edge_features)
 
         pred_class = self.classifier(z_graph)
+        pred_class_ct = (
+            self.classifier_ct(z_graph) if self.classifier_ct is not None else None
+        )
 
-        return pred_edge, pred_class
+        return pred_edge, pred_class, pred_class_ct
 
     def plot_graph_embeddings(self, data, label_names=None, method="umap",
                               test_data=None):
@@ -440,6 +466,7 @@ def train_gnn(
     w_l2=1e-4,
     w_classifier=1.0,
     w_edge_pred=0.5,
+    w_classifier_ct=1.0,
     val_loader=None,
 ):
     """
@@ -447,6 +474,10 @@ def train_gnn(
 
     Parameters
     ----------
+    w_classifier_ct : float
+        Loss weight for the optional second classification head (e.g. cell type).
+        Only used when the model was built with ``n_classes_ct`` and the batches
+        carry a ``y_ct`` attribute; otherwise ignored.
     val_loader : DataLoader, optional
         When provided, a full evaluation pass is run at the end of every epoch
         and val_loss / val_acc are reported in the progress bar. The model is
@@ -465,10 +496,12 @@ def train_gnn(
 
     val_acc_display = None
     val_loss_display = None
+    val_acc_ct_display = None
 
     for epoch in range(epochs):
 
         epoch_correct = 0
+        epoch_correct_ct = 0
         epoch_total = 0
 
         for batch in train_loader:
@@ -479,18 +512,31 @@ def train_gnn(
             batch.y = batch.y.detach()
 
             optimizer.zero_grad()
-            pred_edge, pred_class = model(batch)
+            pred_edge, pred_class, pred_class_ct = model(batch)
             class_loss = w_classifier * model.classifier.loss(pred_class, batch.y)
             edge_loss = w_edge_pred * model.edge_predictor.loss(
                 pred_edge, batch.edge_attr
             )
             loss = class_loss + edge_loss
+
+            # Optional second objective (e.g. cell type)
+            has_ct = pred_class_ct is not None and hasattr(batch, "y_ct")
+            if has_ct:
+                ct_loss = w_classifier_ct * model.classifier_ct.loss(
+                    pred_class_ct, batch.y_ct
+                )
+                loss = loss + ct_loss
+
             loss.backward()
             optimizer.step()
 
             preds = pred_class.argmax(dim=-1)
             epoch_correct += (preds == batch.y).sum().item()
             epoch_total += batch.y.size(0)
+            if has_ct:
+                epoch_correct_ct += (
+                    pred_class_ct.argmax(dim=-1) == batch.y_ct
+                ).sum().item()
 
             train_acc = epoch_correct / epoch_total if epoch_total > 0 else 0.0
             pf = dict(
@@ -498,31 +544,49 @@ def train_gnn(
                 acc=f"{train_acc:.2%}",
                 epoch=f"{epoch + 1}/{epochs}",
             )
+            if has_ct:
+                pf["acc_ct"] = f"{epoch_correct_ct / epoch_total:.2%}"
             if val_acc_display is not None:
                 pf["val_loss"] = f"{val_loss_display:.4f}"
                 pf["val_acc"] = f"{val_acc_display:.2%}"
+                if val_acc_ct_display is not None:
+                    pf["val_acc_ct"] = f"{val_acc_ct_display:.2%}"
             progress_bar.set_postfix(**pf)
             progress_bar.update()
 
         # ── Validation pass (end of epoch) ────────────────────────────────────
         if val_loader is not None:
             model.eval()
-            val_correct, val_total = 0, 0
+            val_correct, val_correct_ct, val_total = 0, 0, 0
             val_loss_sum, val_n_batches = 0.0, 0
             with torch.no_grad():
                 for vbatch in val_loader:
                     vbatch = vbatch.to(device)
-                    pred_edge_v, pred_class_v = model(vbatch)
+                    pred_edge_v, pred_class_v, pred_class_ct_v = model(vbatch)
                     c_loss_v = w_classifier * model.classifier.loss(pred_class_v, vbatch.y)
                     e_loss_v = w_edge_pred * model.edge_predictor.loss(
                         pred_edge_v, vbatch.edge_attr
                     )
-                    val_loss_sum += (c_loss_v + e_loss_v).item()
+                    batch_loss_v = c_loss_v + e_loss_v
+                    has_ct_v = pred_class_ct_v is not None and hasattr(vbatch, "y_ct")
+                    if has_ct_v:
+                        batch_loss_v = batch_loss_v + w_classifier_ct * model.classifier_ct.loss(
+                            pred_class_ct_v, vbatch.y_ct
+                        )
+                        val_correct_ct += (
+                            pred_class_ct_v.argmax(dim=-1) == vbatch.y_ct
+                        ).sum().item()
+                    val_loss_sum += batch_loss_v.item()
                     val_n_batches += 1
                     val_correct += (pred_class_v.argmax(dim=-1) == vbatch.y).sum().item()
                     val_total += vbatch.y.size(0)
             val_acc_display = val_correct / val_total
             val_loss_display = val_loss_sum / val_n_batches
+            val_acc_ct_display = (
+                val_correct_ct / val_total
+                if (val_total > 0 and model.classifier_ct is not None)
+                else None
+            )
             model.train()
 
     progress_bar.close()
