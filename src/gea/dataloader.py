@@ -6,6 +6,9 @@ import io
 from transformers import BertModel
 from huggingface_hub import hf_hub_download
 import pickle
+import torch
+from torch.utils.data import Dataset
+import numpy as np
 
 
 def load_counts(path: str, delim="\t", index_col="Geneid") -> pd.DataFrame:
@@ -180,3 +183,84 @@ def load_geneformer(
     except Exception as e:
         print(f"Error loading Geneformer model or token dictionary: {e}")
         return None, None
+
+
+class EmbeddingDataset(Dataset):
+    """
+    Standardized embedding dataset format.
+
+    Reads embeddings, annotations, entities, predictions, and targets from a
+    NumPy `.npz` file.
+
+    The `.npz` file must contain:
+
+        - "embeddings": A NumPy array of shape (N, D), where N is the number
+          of samples (nodes, edges or graphs) and D is the embedding dimension.
+
+        - "annotations": A NumPy object array containing a dictionary of
+          annotations for each sample.
+
+        - "entities": A NumPy array containing the identifier of the entity
+          associated with each sample (e.g., SMILES string for molecular data).
+
+        - "prediction": A NumPy array containing the model prediction associated
+          with each sample.
+
+        - "target": A NumPy array containing the ground-truth target associated
+          with each sample.
+
+    Sample correspondence:
+        embeddings[i]
+        annotations[i]
+        entities[i]
+        prediction[i]
+        target[i]
+
+        all correspond to the same sample.
+
+    Embeddings are representation-agnostic and can originate from any source
+    (node-level, graph-level, bond-level, sequence-level, etc.) as long as
+    they are converted into fixed-size vectors.
+
+    The dataset returns samples in the format:
+        {
+            "embedding": Tensor[D],
+            "annotation": {
+                annotation_name: Tensor[...]
+            },
+            "entity": str,
+            "prediction": Tensor,
+            "target": Tensor
+        }
+    """
+
+    def __init__(self, npz_file):
+        data = np.load(npz_file, allow_pickle=True)
+
+        self.embeddings = torch.tensor(
+            data["embeddings"],
+            dtype=torch.float32
+        )
+
+        self.annotations = data["annotations"]
+        self.entities = data["entities"]
+        self.predictions = data["prediction"]
+        self.targets = data["target"]
+
+    def __len__(self):
+        return len(self.embeddings)
+
+    def __getitem__(self, idx):
+
+        annotation = {
+            label: torch.tensor(value, dtype=torch.float32)
+            for label, value in self.annotations[idx].items()
+        }
+
+        return {
+            "embedding": self.embeddings[idx],
+            "annotation": annotation,
+            "entity": self.entities[idx],
+            "prediction": self.predictions[idx],
+            "target": self.targets[idx],
+        }
