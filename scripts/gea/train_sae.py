@@ -83,7 +83,7 @@ def main(args):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        description="Annotate Grover molecular embeddings."
+        description="Train a Sparse Autoencoder on precomputed embedding vectors."
     )
 
     parser.add_argument(
