@@ -56,6 +56,61 @@ def extract_graph_activations(sae_graph, gnn_model, data_loader, device, label_n
     return df
 
 
+def train_sae_graph(
+    sae_model,
+    #gnn_model,
+    train_loader,
+    device,
+    epochs=1000,
+    lr=1e-3,
+    w_l2=1e-4,
+):
+
+    sae_model.to(device)
+    sae_model.train()
+    
+    #gnn_model.eval()
+
+    optimizer = optim.Adam(sae_model.parameters(), lr=lr, weight_decay=w_l2)
+
+    total_steps = len(train_loader) * epochs
+
+    progress_bar = tqdm(
+        range(total_steps),
+        desc="Training SAE model",
+    )
+
+    for epoch in range(epochs):
+
+        for batch in train_loader:
+            embeddings = batch['embedding'].to(device)
+            optimizer.zero_grad()
+
+            # Extract graph-level embeddings
+            #with torch.no_grad():
+                #_, z_graph = gnn_model.encode(batch)
+
+            # Forward pass through SAE
+            z, pred_z_graph = sae_model(embeddings)
+
+            # Calculate loss
+            loss = sae_model.loss(pred_z_graph, embeddings, z)
+
+            # Backpropagation and optimization step
+            loss.backward()
+            optimizer.step()
+            sae_model.normalize_weights()  # normalize decoder weights to prevent collapse to zero and encourage diversity in learned features
+
+            # Update progress bar
+            progress_bar.set_postfix(
+                total_loss=f"{loss.item():.4f}",
+                epoch=f"{epoch}/{epochs + 1}",
+            )
+            progress_bar.update()
+
+    progress_bar.close()
+
+
 def extract_node_activations(sae_node, gnn_model, data_loader, device):
     """
     Extract node-level SAE feature activations for every graph.
@@ -81,6 +136,185 @@ def extract_node_activations(sae_node, gnn_model, data_loader, device):
                 labels.append(batch.y[i].item())
 
     return node_acts, labels
+
+def compute_feature_maxima(sae_model, data_loader, device):
+
+    sae_model.to(device)
+    sae_model.eval()
+    
+    max_per_feat = torch.zeros(sae_model.latent_dim, device=device)
+    activation_count = torch.zeros(sae_model.latent_dim, device=device)
+
+    with torch.no_grad():
+        for batch in data_loader:
+
+            embeddings = batch["embedding"].to(device)
+
+            z_sae, _ = sae_model(embeddings)
+
+            batch_max = z_sae.max(dim=0).values
+
+            max_per_feat = torch.maximum(max_per_feat, batch_max)
+            activation_count += (z_sae > 0).sum(dim=0)
+
+    # Avoid division by zero later
+    max_per_feat.clamp_(min=1e-8)
+    frequency = activation_count / len(data_loader.dataset)
+
+    return max_per_feat, frequency
+
+
+def activations_preparation(sae_activations, feature_maxima, threshold = 0.5):
+
+    normalized_sae_activations = sae_activations/feature_maxima
+    binary = normalized_sae_activations > threshold
+
+    return binary
+
+def confusion_counts(binary_acts, labels):
+    """
+    binary_acts : (N, F) bool
+    labels      : (N,) bool
+
+    Returns
+    -------
+    tp, fp, tn, fn : (F,)
+    """
+
+    labels = labels.unsqueeze(1).bool()
+
+    tp = (binary_acts & labels).sum(dim=0)
+    fp = (binary_acts & ~labels).sum(dim=0)
+    tn = (~binary_acts & ~labels).sum(dim=0)
+    fn = (~binary_acts & labels).sum(dim=0)
+
+    return tp, fp, tn, fn
+
+def concept_comparison(sae_model, data_loader, threshold = 0.5, device = 'cuda'):
+
+    sae_model.to(device)
+    sae_model.eval()
+
+    concept_names = list(data_loader.dataset[0]["target"].keys())
+    num_features = sae_model.latent_dim
+
+    metrics = {
+        concept: {
+            "tp": torch.zeros(num_features, dtype=torch.int64),
+            "fp": torch.zeros(num_features, dtype=torch.int64),
+            "tn": torch.zeros(num_features, dtype=torch.int64),
+            "fn": torch.zeros(num_features, dtype=torch.int64),
+        }
+        for concept in concept_names
+    }
+
+    concept_counts = {
+        concept: 0
+        for concept in concept_names
+    }
+
+    max_features, frequency_stats = compute_feature_maxima(sae_model=sae_model, 
+                                                           data_loader=data_loader,
+                                                           device = device)
+        
+    with torch.no_grad():
+        for batch in data_loader:
+
+            embeddings = batch["embedding"].to(device)
+            concepts = batch['target']
+            z_sae, _ = sae_model(embeddings)
+            
+            binary = activations_preparation(sae_activations=z_sae,
+                                             feature_maxima=max_features,
+                                             threshold=threshold)
+
+            for concept_name, labels in concepts.items():
+                labels = labels.to(device)
+                concept_counts[concept_name] += labels.sum().item()
+                tp, fp, tn, fn = confusion_counts(binary_acts=binary, labels = labels)
+                metrics[concept_name]["tp"] += tp.cpu()
+                metrics[concept_name]["fp"] += fp.cpu()
+                metrics[concept_name]["tn"] += tn.cpu()
+                metrics[concept_name]["fn"] += fn.cpu()
+
+    return metrics, concept_counts, frequency_stats, max_features
+
+def calculate_f1(metrics, concept_name, threshold):
+
+    tp = metrics[concept_name][threshold]["tp"].float()
+    fp = metrics[concept_name][threshold]["fp"].float()
+    fn = metrics[concept_name][threshold]["fn"].float()
+
+    f1 = 2 * tp / (2 * tp + fp + fn + 1e-8)
+
+    return f1
+
+def gea_annotation(sae_model, data_loader, thresholds = [0, 0.15, 0.5, 0.6, 0.8], device = 'cuda'):
+
+    sae_model.to(device)
+    sae_model.eval()
+
+    concept_names = list(data_loader.dataset[0]["target"].keys())
+    num_features = sae_model.latent_dim
+
+    concept_counts = {
+        concept: 0
+        for concept in concept_names
+    }
+
+    max_features, frequency_stats = compute_feature_maxima(sae_model = sae_model, 
+                                                           data_loader = data_loader,
+                                                           device = device)
+
+    metrics = {
+        concept: {
+            th: {
+                "tp": torch.zeros(num_features),
+                "fp": torch.zeros(num_features),
+                "tn": torch.zeros(num_features),
+                "fn": torch.zeros(num_features),
+            }
+            for th in thresholds
+        }
+        for concept in concept_names
+    }
+        
+    with torch.no_grad():
+        for batch in data_loader:
+
+            embeddings = batch["embedding"].to(device)
+            concepts = batch['target']
+            z_sae, _ = sae_model(embeddings)
+
+            for concept_name, labels in concepts.items():
+                labels = labels.to(device)
+                concept_counts[concept_name] += labels.sum().item()
+                for th in thresholds:
+                    binary = activations_preparation(sae_activations=z_sae,
+                                                     feature_maxima=max_features,
+                                                     threshold=th)
+                    tp, fp, tn, fn = confusion_counts(binary_acts=binary, labels = labels)
+                    metrics[concept_name][th]["tp"] += tp.cpu()
+                    metrics[concept_name][th]["fp"] += fp.cpu()
+                    metrics[concept_name][th]["tn"] += tn.cpu()
+                    metrics[concept_name][th]["fn"] += fn.cpu()
+
+    best_features = {
+        concept_name: {}
+        for concept_name in concept_names
+    }
+
+    for concept_name, labels in concepts.items():
+        for th in thresholds:
+            f1scores = calculate_f1(metrics=metrics, concept_name=concept_name, threshold=th)
+            best_f1, best_feature = torch.max(f1scores, dim=0)
+            best_features[concept_name][th] = {
+                "f1": best_f1.item(),
+                "feature": best_feature.item()
+            }
+                    
+    return best_features, concept_counts, frequency_stats, max_features
+
 
 
 def extract_edge_activations(sae_edge, gnn_model, data_loader, device):
