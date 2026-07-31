@@ -181,12 +181,19 @@ def confusion_counts(binary_acts, labels):
     tp, fp, tn, fn : (F,)
     """
 
-    labels = labels.unsqueeze(1).bool()
+    labels = labels.bool()
 
-    tp = (binary_acts & labels).sum(dim=0)
-    fp = (binary_acts & ~labels).sum(dim=0)
-    tn = (~binary_acts & ~labels).sum(dim=0)
-    fn = (~binary_acts & labels).sum(dim=0)
+    if binary_acts.ndim == 1:
+        tp = (binary_acts & labels).sum()
+        fp = (binary_acts & ~labels).sum()
+        tn = (~binary_acts & ~labels).sum()
+        fn = (~binary_acts & labels).sum()
+    else:
+        labels = labels.unsqueeze(1)
+        tp = (binary_acts & labels).sum(dim=0)
+        fp = (binary_acts & ~labels).sum(dim=0)
+        tn = (~binary_acts & ~labels).sum(dim=0)
+        fn = (~binary_acts & labels).sum(dim=0)
 
     return tp, fp, tn, fn
 
@@ -195,7 +202,7 @@ def concept_comparison(sae_model, data_loader, threshold = 0.5, device = 'cuda')
     sae_model.to(device)
     sae_model.eval()
 
-    concept_names = list(data_loader.dataset[0]["target"].keys())
+    concept_names = list(data_loader.dataset[0]["annotation"].keys())
     num_features = sae_model.latent_dim
 
     metrics = {
@@ -221,7 +228,7 @@ def concept_comparison(sae_model, data_loader, threshold = 0.5, device = 'cuda')
         for batch in data_loader:
 
             embeddings = batch["embedding"].to(device)
-            concepts = batch['target']
+            concepts = batch['annotation']
             z_sae, _ = sae_model(embeddings)
             
             binary = activations_preparation(sae_activations=z_sae,
@@ -249,12 +256,14 @@ def calculate_f1(metrics, concept_name, threshold):
 
     return f1
 
-def gea_annotation(sae_model, data_loader, thresholds = [0, 0.15, 0.5, 0.6, 0.8], device = 'cuda'):
+def gea_annotation(sae_model, data_loader, 
+                   thresholds = [0, 0.15, 0.5, 0.6, 0.8], 
+                   top_k = 5, device = 'cuda'):
 
     sae_model.to(device)
     sae_model.eval()
 
-    concept_names = list(data_loader.dataset[0]["target"].keys())
+    concept_names = list(data_loader.dataset[0]["annotation"].keys())
     num_features = sae_model.latent_dim
 
     concept_counts = {
@@ -283,7 +292,7 @@ def gea_annotation(sae_model, data_loader, thresholds = [0, 0.15, 0.5, 0.6, 0.8]
         for batch in data_loader:
 
             embeddings = batch["embedding"].to(device)
-            concepts = batch['target']
+            concepts = batch['annotation']
             z_sae, _ = sae_model(embeddings)
 
             for concept_name, labels in concepts.items():
@@ -307,15 +316,92 @@ def gea_annotation(sae_model, data_loader, thresholds = [0, 0.15, 0.5, 0.6, 0.8]
     for concept_name, labels in concepts.items():
         for th in thresholds:
             f1scores = calculate_f1(metrics=metrics, concept_name=concept_name, threshold=th)
-            best_f1, best_feature = torch.max(f1scores, dim=0)
-            best_features[concept_name][th] = {
-                "f1": best_f1.item(),
-                "feature": best_feature.item()
-            }
-                    
+            #best_f1, best_feature = torch.max(f1scores, dim=0)
+            top_f1, top_features = torch.topk(f1scores, k=top_k)
+            #best_features[concept_name][th] = {
+                #"f1": top_f1.tolist(),
+                #"feature": top_features.tolist()
+            #}
+            best_features[concept_name][th] = [
+                {
+                    "feature": feature.item(),
+                    "f1": f1.item()
+                }
+                for feature, f1 in zip(top_features, top_f1)
+            ]
+                      
     return best_features, concept_counts, frequency_stats, max_features
 
+def best_concept_features(counts, best_features, min_count=50):
 
+    valid_concepts = [
+        concept for concept, value in counts.items()
+        if value > min_count
+    ]
+
+    concept_feature_pairs = {}
+
+    for concept in valid_concepts:
+
+        feature_dict = {}
+
+        for th, feature_list in best_features[concept].items():
+
+            for feature_info in feature_list:
+
+                feature = feature_info["feature"]
+                f1 = feature_info["f1"]
+
+                # Keep the best threshold for each feature
+                if feature not in feature_dict or f1 > feature_dict[feature]["f1"]:
+                    feature_dict[feature] = {
+                        "f1": f1,
+                        "threshold": th
+                    }
+
+        for feature, info in feature_dict.items():
+            concept_feature_pairs[(concept, feature)] = info
+
+    return concept_feature_pairs
+
+def concept_feature_test(sae_model, data_loader, max_features, 
+                         concept_feature_pairs, device = 'cuda'):
+
+    sae_model.to(device)
+    sae_model.eval()
+
+    for (concept, feature), info in concept_feature_pairs.items():
+        info["tp"] = 0
+        info["fp"] = 0
+        info["tn"] = 0
+        info["fn"] = 0
+        
+    with torch.no_grad():
+        for batch in data_loader:
+
+            embeddings = batch["embedding"].to(device)
+            annotation = batch['annotation']
+            z_sae, _ = sae_model(embeddings)
+
+            for (concept, feature), info in concept_feature_pairs.items():
+
+                binary = activations_preparation(
+                    sae_activations=z_sae[:,feature],
+                    feature_maxima=max_features[feature],
+                    threshold=info["threshold"]
+                )
+                
+                labels = annotation[concept].to(device)
+
+                tp, fp, tn, fn = confusion_counts(binary_acts=binary, labels = labels)
+
+                info["tp"] += tp.cpu()
+                info["fp"] += fp.cpu()
+                info["tn"] += tn.cpu()
+                info["fn"] += fn.cpu()
+
+                    
+    return concept_feature_pairs
 
 def extract_edge_activations(sae_edge, gnn_model, data_loader, device):
     """

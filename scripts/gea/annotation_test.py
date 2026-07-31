@@ -1,5 +1,5 @@
 from gea.dataloader import EmbeddingDataset
-from gea.analysis import gea_annotation
+from gea.analysis import gea_annotation, best_concept_features, concept_feature_test
 from gea.gea import ShallowSAE
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -8,11 +8,21 @@ import argparse
 def main(args):
 
     emb_data = EmbeddingDataset(args.embeddings_path)
+
     splits = torch.load(args.splits_path)
+
+    test_data = Subset(emb_data, splits["test"])
     val_data = Subset(emb_data, splits["val"])
 
     val_loader = DataLoader(
         val_data,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers
+    )
+
+    test_loader = DataLoader(
+        test_data,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers
@@ -37,6 +47,21 @@ def main(args):
         sae_model = sae_graph, 
         data_loader = val_loader, 
         thresholds = args.thresholds, 
+        top_k = args.top_k,
+        device = device
+    )
+
+    concept_feature_pairs = best_concept_features(
+        counts=concept_counts, 
+        best_features=best_features,
+        min_count=args.min_count
+    )
+
+    test_results = concept_feature_test(
+        sae_model = sae_graph, 
+        data_loader = test_loader, 
+        max_features = max_features, 
+        concept_feature_pairs = concept_feature_pairs, 
         device = device
     )
 
@@ -46,6 +71,7 @@ def main(args):
             "concept_counts": concept_counts,
             "frequency_stats": frequency_stats,
             "max_features": max_features,
+            "test_results": test_results
         },
         args.results_path
     )
@@ -121,6 +147,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--min_count",
+        type=int,
+        default=50,
+        help="Minimum number of counts per concept."
+    )
+
+    parser.add_argument(
         "--thresholds",
         type=float,
         nargs="+",
@@ -129,9 +162,16 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--top_k",
+        type=int,
+        default=5,
+        help="Number of top features to select during validation."
+    )
+
+    parser.add_argument(
         "--results_path",
         type=str,
-        default="gea_annotation_results.pt",
+        default="gea_annotation_results_test.pt",
         help="Path to save metrics."
     )
 
