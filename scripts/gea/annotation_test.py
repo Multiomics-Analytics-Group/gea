@@ -165,7 +165,7 @@ if __name__ == "__main__":
         "--top_k",
         type=int,
         default=5,
-        help="Number of top features to select."
+        help="Number of top features to select during validation."
     )
 
     parser.add_argument(
