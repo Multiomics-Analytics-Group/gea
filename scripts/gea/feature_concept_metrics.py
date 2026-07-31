@@ -134,3 +134,7 @@ if __name__ == "__main__":
         default="gea_annotation_results.pt",
         help="Path to save metrics."
     )
+
+    args = parser.parse_args()
+
+    main(args)
