@@ -1,7 +1,20 @@
 import torch
 from rdkit import Chem
-from motifAnnotation import motifAnnotation
 import numpy as np
+
+def motifAnnotation(mol, motif_dict):
+    mol_dict = {}
+
+    for motif, smarts in motif_dict.items():
+        patt = Chem.MolFromSmarts(smarts)
+        mask = [0]*mol.GetNumAtoms()
+        for match in mol.GetSubstructMatches(patt):
+            for atom_idx in match:
+                mask[atom_idx] = 1
+    
+        mol_dict[motif] = mask
+
+    return mol_dict
 
 def annotate_node_GroverEmbeds(embeddings_path, motif_dict):
     embeddings = torch.load(embeddings_path)
@@ -87,16 +100,3 @@ def annotate_graph_GroverEmbeds(embeddings_path, motif_dict):
         "target": np.array(targets),
     }
 
-def motifAnnotation(mol, motif_dict):
-    mol_dict = {}
-
-    for motif, smarts in motif_dict.items():
-        patt = Chem.MolFromSmarts(smarts)
-        mask = [0]*mol.GetNumAtoms()
-        for match in mol.GetSubstructMatches(patt):
-            for atom_idx in match:
-                mask[atom_idx] = 1
-    
-        mol_dict[motif] = mask
-
-    return mol_dict
