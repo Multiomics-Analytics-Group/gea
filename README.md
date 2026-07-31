@@ -19,13 +19,16 @@ An overview of the workflow can be found below:
 
 ## Table of Contents :bookmark_tabs:
 
-- [Installation](#installation)
+- [Table of Contents :bookmark\_tabs:](#table-of-contents-bookmark_tabs)
+- [:gear: Installation](#gear-installation)
 - [Features](#features)
-- [Usage](#usage)
+- [:rocket: Usage](#rocket-usage)
+  - [:brain: General workflow](#brain-general-workflow)
+  - [:microscope: GEA applied to molecules](#microscope-gea-applied-to-molecules)
 - [Documentation](#documentation)
 - [License](#license)
 
-## Installation 
+## :gear: Installation 
 
 > [!TIP]
 > It is recommended to install GEA inside a virtual environment to manage depenendencies and avoid conflicts with existing packages. You can use the virtual environment manager of your choice, such as `poetry`, `conda`, or `pipenv`.
@@ -40,8 +43,117 @@ pip install -e .
 ```
 
 ## Features
-## Usage
+
+## :rocket: Usage
+
+### :brain: General workflow
+
+GEA's workflow consists of three stages:
+
+1. Train a Sparse Autoencoder (SAE) on a training set of embedding vectors (e.g., node-, edge-, or graph-level embeddings).
+2. Annotate the learned SAE features using a validation set and the corresponding concept annotations.
+3. Evaluate the learned features on an independent test set.
+
+Annotations provide a way to associate SAE features with domain-specific concepts. The type of concepts used for annotation depends on the application domain (see *GEA applied to molecules* for an example based on molecular motifs).
+
+The training script expects an `.npz` file containing, at a minimum, the following entries:
+
+* **`embeddings`**: a NumPy array of shape `(N, D)`, where `N` is the number of embedding vectors and `D` is the embedding dimension.
+* **`annotations`**: a NumPy object array of length `N`. Each element is a dictionary mapping concept names to binary labels indicating whether the corresponding concept is present in the associated embedding.
+
+The *i*-th embedding in `embeddings` must correspond to the *i*-th annotation dictionary in `annotations`.
+
+Optionally, the `.npz` file may also contain additional metadata, such as:
+
+* **`entities`**: identifier associated with each embedding (e.g., a molecule identifier or SMILES string).
+* **`prediction`**: model prediction associated with each embedding.
+* **`target`**: ground-truth label associated with each embedding.
+
+These additional fields are preserved by the dataset loader and can be used in downstream analyses, but they are **not required** for training the SAE.
+
+To train an SAE, run:
+
+```bash
+python scripts/gea/train_sae.py \
+    --embeddings_path node_embeddings.npz \
+    --d_z 1200 \
+    --epochs 50
+```
+
+To see all available command-line arguments, run:
+
+```bash
+python scripts/gea/train_sae.py --help
+```
+
+The second and third stages of the GEA workflow—feature annotation and evaluation—can be performed using:
+
+```bash
+python scripts/gea/annotation_test.py
+```
+
+This script requires the dataset splits generated during SAE training. The splits are saved by `train_sae.py` and are loaded from the same path by default. If a different location was used during training, the corresponding path can be provided using the appropriate command-line argument.
+
+By default, the results are saved to:
+
+```text
+gea_annotation_results_test.pt
+```
+
+A different output location can be specified using the `--results_path` argument.
+
+If the default arguments were used during SAE training, the annotation and evaluation script can be run directly as shown above. To view all available command-line arguments, run:
+
+```bash
+python scripts/gea/annotation_test.py --help
+```
+
+### :microscope: GEA applied to molecules
+
+GEA has been applied to embeddings obtained using a [fine-tuned version of GROVER](https://github.com/m-baralt/grover) trained to predict solubility from molecular structures.
+
+The embedding file is a Python dictionary where each key corresponds to a molecule represented as a SMILES string. Each value is a dictionary containing four types of embeddings:
+
+* **`atom_from_atom`**
+* **`atom_from_bond`**
+* **`bond_from_atom`**
+* **`bond_from_bond`**
+
+These embeddings can represent different molecular entities and can subsequently be converted into the standardized `.npz` format required by the general GEA workflow.
+
+Once the embeddings have been obtained, a molecular motif dictionary can be created by running:
+
+```bash
+python scripts/gea_molecules/create_motif_dict.py
+```
+
+By default, the motif dictionary is saved as:
+
+```text
+dict/motif_dictionary.pkl
+```
+
+This dictionary can be expanded or modified to include additional molecular concepts.
+
+Given the embedding file and the motif dictionary, molecular embeddings can be annotated and prepared for SAE training using:
+
+```bash
+python scripts/gea_molecules/annotate_embeddings.py \
+    --embeddings_path grover_embeddings.pt
+```
+
+This script generates the `.npz` files containing embeddings, annotations, and additional metadata required for the GEA workflow.
+
+To see all available command-line arguments, run:
+
+```bash
+python scripts/gea_molecules/annotate_embeddings.py --help
+```
+
+Once the data has been prepared, the general GEA workflow can be applied independently to each generated embedding file.
+
 ## Documentation
+
 ## License
 
 The code in this repository is licensed under the **MIT License**, allowing you to use, modify, and distribute it freely as long as you include the original copyright and license notice.
