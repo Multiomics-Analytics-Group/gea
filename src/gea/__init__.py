@@ -12,11 +12,13 @@ from gea.analysis import (
     extract_graph_activations,
     extract_node_activations,
     extract_edge_activations,
+    extract_sae_activations,
     # DFA
     filter_dead_features,
     differential_feature_activation,
     volcano_plot,
     plot_feature_activation_heatmap,
+    plot_sae_feature_clustermap,
     feature_coactivation,
     # Explainability pipeline
     attribute_nodes_to_graph_feature,
