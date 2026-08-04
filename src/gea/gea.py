@@ -1,4 +1,6 @@
 import random
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -590,6 +592,401 @@ def train_gnn(
             model.train()
 
     progress_bar.close()
+
+
+# ── Embedding extraction (trained GNN → EmbeddingDataset) ─────────────────────
+
+# Separators used to build the entity string of a sample. Both are unlikely to
+# occur inside a sample name or an Ensembl gene id, so entities stay parseable.
+ENTITY_SEP = "::"      # between graph id and the gene part
+GENE_PAIR_SEP = "--"   # between the two genes of an edge
+
+
+@torch.no_grad()
+def extract_embeddings(
+    model,
+    loader,
+    device,
+    level="graph",
+    gene_names=None,
+    label_names=None,
+    ct_names=None,
+    undirected=True,
+    dtype=np.float32,
+):
+    """
+    Run a trained GNN over a loader and collect the embeddings of one level,
+    together with the identity of every row, in the layout read by
+    :class:`gea.dataloader.EmbeddingDataset`.
+
+    Parameters
+    ----------
+    model : GNNModel
+        Trained model. Only ``encode`` and the prediction heads are used; the
+        model is set to eval mode and no gradients are tracked.
+    loader : torch_geometric.loader.DataLoader
+        Must use ``shuffle=False`` so row order is reproducible: SAE activations
+        are later joined back onto these rows by position.
+    device : torch.device
+    level : {"graph", "node", "edge"}
+        Which representation to export:
+
+        - ``"graph"`` → one row per graph, ``z_graph`` (mean-pooled nodes).
+        - ``"node"``  → one row per (graph, gene), ``z_node``.
+        - ``"edge"``  → one row per (graph, gene pair), ``mean(z_src, z_dst)``,
+          the same edge embedding used by ``extract_edge_activations``.
+    gene_names : list of str, optional
+        Gene identifiers in node order, i.e. the order used when the graphs were
+        built by ``gene_networks_to_pyg`` (the columns of the normalised count
+        matrix). Required for ``level="node"`` and ``level="edge"``: the graphs
+        themselves only carry integer node indices.
+    label_names : list of str, optional
+        Maps integer ``y`` (phenotype) to display strings.
+    ct_names : list of str, optional
+        Maps integer ``y_ct`` (optional second label, e.g. cell type) to display
+        strings.
+    undirected : bool
+        Edge level only. ``gene_networks_to_pyg`` stores both directions of every
+        edge and the edge embedding is symmetric, so by default only the
+        ``src < dst`` copy is kept — otherwise every gene pair appears twice with
+        an identical embedding, which biases SAE training and doubles the file.
+    dtype : numpy dtype
+        Storage dtype of the embedding matrix. ``np.float16`` halves the size of
+        large edge-level exports at some precision cost.
+
+    Returns
+    -------
+    dict
+        Ready to be written with ``np.savez(path, **result)`` (see
+        ``save_embeddings``) and read back by ``EmbeddingDataset``:
+
+        - ``embeddings`` : [N, D] embedding matrix.
+        - ``entities`` : identity of each row as a string —
+          ``"<graph_id>"`` (graph level),
+          ``"<graph_id>::<gene>"`` (node level),
+          ``"<graph_id>::<geneA>--<geneB>"`` (edge level).
+        - ``annotations`` : one dict of numeric metadata per row.
+
+          The biological groups are **one-hot vectors**, not class integers:
+          ``disease`` is ``[0, 1]`` rather than ``1`` and ``cell_type`` is
+          ``[0, 0, 0, 0, 0, 1, 0]`` rather than ``5``, so they can be regressed
+          against SAE features directly. ``disease_classes`` /
+          ``cell_type_classes`` (below) give the order of their positions;
+          ``cell_type`` is omitted when the graphs carry no ``y_ct``.
+
+          The remaining entries are the values that cannot be recovered from the
+          row's identity: ``expression``, ``degree``, ``node_idx`` and
+          ``graph_idx`` (node level); the **signed** co-expression ``weight``,
+          ``src_idx``, ``dst_idx`` and ``graph_idx`` (edge level). Graph level has
+          only the one-hot groups. The index entries are join keys, not identity:
+          ``graph_idx`` is the row of the same graph in the graph-level export,
+          and ``node_idx`` / ``src_idx`` / ``dst_idx`` are local node indices in
+          the PyG graph, as used by ``plot_feature_subgraph``.
+        - ``prediction`` : predicted class of the graph (graph and node level,
+          a node inheriting the prediction of its graph) or the predicted edge
+          weight (edge level).
+        - ``target`` : ground-truth phenotype ``y`` (graph and node level) or the
+          value the edge predictor was trained on, ``|weight|`` (edge level).
+        - ``graph_id``, ``gene`` / ``gene_a`` + ``gene_b``, ``disease``,
+          ``cell_type``, ``disease_classes``, ``cell_type_classes``, ``level`` :
+          the same identity as columns rather than packed into the entity string,
+          plus the one-hot class order. ``EmbeddingDataset`` ignores these; they
+          exist so ``load_embedding_metadata`` can build the table used to map
+          SAE features back onto genes without string parsing.
+
+    Notes
+    -----
+    Edge weights are stored signed because the sign is the biologically
+    meaningful part (co-expression vs anti-correlation), while the model itself
+    only sees ``|weight|`` in ``edge_attr`` and the sign in ``edge_type``. The
+    sign therefore replaces a separate ``edge_type`` annotation, which would
+    carry no extra information.
+    """
+    if level not in ("graph", "node", "edge"):
+        raise ValueError(
+            f"level must be one of 'graph', 'node', 'edge'; got {level!r}."
+        )
+    if level in ("node", "edge") and gene_names is None:
+        raise ValueError(
+            f"gene_names is required for level={level!r}: the PyG graphs only "
+            "store integer node indices, so gene identity has to come from the "
+            "gene order used to build them."
+        )
+    if gene_names is not None:
+        gene_names = list(gene_names)
+
+    model.to(device)
+    model.eval()
+
+    graphs = getattr(loader, "dataset", [])
+    has_ct = len(graphs) > 0 and hasattr(graphs[0], "y_ct")
+
+    def _classes(names, head, attr):
+        """Class order of a graph-level label, as a list of display strings."""
+        if names is not None:
+            return [str(n) for n in names]
+        if head is not None:
+            n = head.classifier_net[-1].out_features
+        else:
+            n = max(int(getattr(g, attr)) for g in graphs) + 1
+        return [str(i) for i in range(n)]
+
+    disease_classes = _classes(label_names, model.classifier, "y")
+    ct_classes = (
+        _classes(ct_names, model.classifier_ct, "y_ct") if has_ct else []
+    )
+    # One shared vector per class: rows of the same class reference the same array,
+    # so a million one-hot annotations cost no extra memory and pickle to a
+    # back-reference rather than a copy.
+    disease_onehot = list(np.eye(len(disease_classes), dtype=np.float32))
+    ct_onehot = list(np.eye(len(ct_classes), dtype=np.float32)) if ct_classes else []
+
+    def _groups(yy, yc):
+        """One-hot annotation entries for the biological groups of one row."""
+        groups = {"disease": disease_onehot[int(yy)]}
+        if ct_onehot:
+            groups["cell_type"] = ct_onehot[int(yc)]
+        return groups
+
+    emb_chunks, pred_chunks, target_chunks = [], [], []
+    annotations, entities = [], []
+    columns = {}      # identity columns: name → list of str, one entry per row
+    graph_offset = 0  # index of the first graph of the current batch
+
+    def _add_col(name, values):
+        columns.setdefault(name, []).extend(values)
+
+    def _names(arr, mapping):
+        """Display strings for an integer label array, one per row."""
+        return [
+            "" if np.isnan(v) else mapping[int(v)]
+            for v in np.asarray(arr, dtype=np.float64)
+        ]
+
+    for batch in tqdm(loader, desc=f"Extracting {level}-level embeddings"):
+        batch = batch.to(device)
+        z_node, z_graph = model.encode(batch)
+        n_graphs = batch.num_graphs
+
+        # Per-graph identity and labels, indexed by position within the batch
+        graph_ids = (
+            list(batch.sample_name)
+            if hasattr(batch, "sample_name")
+            else [f"graph_{graph_offset + i}" for i in range(n_graphs)]
+        )
+        y = batch.y.cpu().numpy().reshape(-1)
+        y_ct = (
+            batch.y_ct.cpu().numpy().reshape(-1).astype(np.float64)
+            if hasattr(batch, "y_ct")
+            else np.full(n_graphs, np.nan)
+        )
+        graph_idx = np.arange(graph_offset, graph_offset + n_graphs)
+        pred_class = model.classifier(z_graph).argmax(dim=-1).cpu().numpy()
+
+        if level == "graph":
+            emb_chunks.append(z_graph.cpu().numpy())
+
+            # Row order already is graph order, so a graph_idx annotation would
+            # only repeat the row number; identity lives in the entity instead.
+            annotations.extend(_groups(yy, yc) for yy, yc in zip(y, y_ct))
+            entities.extend(graph_ids)
+
+            _add_col("graph_id", graph_ids)
+            _add_col("disease", _names(y, disease_classes))
+            _add_col("cell_type", _names(y_ct, ct_classes))
+
+            pred_chunks.append(pred_class)
+            target_chunks.append(y)
+
+        elif level == "node":
+            n_per_graph = np.diff(batch.ptr.cpu().numpy())
+            if not np.all(n_per_graph == len(gene_names)):
+                raise ValueError(
+                    f"gene_names has {len(gene_names)} entries but graphs in this "
+                    f"batch have {sorted(set(n_per_graph.tolist()))} nodes. It must "
+                    "list every node of every graph, in node order."
+                )
+
+            emb_chunks.append(z_node.cpu().numpy())
+
+            expr = batch.x[:, 0].cpu().numpy()  # expression is feature dim 0
+            degree = (
+                torch.bincount(batch.edge_index[0], minlength=batch.num_nodes)
+                .cpu()
+                .numpy()
+            )
+            node_graph = batch.batch.cpu().numpy()      # graph of each node
+            node_idx = np.tile(np.arange(len(gene_names)), n_graphs)
+
+            annotations.extend(
+                {
+                    "expression": float(e),
+                    "node_idx": float(ni),
+                    "degree": float(d),
+                    "graph_idx": float(graph_idx[g]),
+                    **_groups(y[g], y_ct[g]),
+                }
+                for e, ni, d, g in zip(expr, node_idx, degree, node_graph)
+            )
+            entities.extend(
+                f"{graph_ids[g]}{ENTITY_SEP}{gene_names[ni]}"
+                for g, ni in zip(node_graph, node_idx)
+            )
+
+            _add_col("graph_id", [graph_ids[g] for g in node_graph])
+            _add_col("gene", gene_names * n_graphs)
+            _add_col("disease", _names(y[node_graph], disease_classes))
+            _add_col("cell_type", _names(y_ct[node_graph], ct_classes))
+
+            pred_chunks.append(pred_class[node_graph])
+            target_chunks.append(y[node_graph])
+
+        else:  # level == "edge"
+            ei = batch.edge_index
+            edge_graph = batch.batch[ei[0]]
+            offset = batch.ptr[edge_graph]          # first node index of each edge's graph
+            src_local = (ei[0] - offset).cpu().numpy()
+            dst_local = (ei[1] - offset).cpu().numpy()
+
+            # Both directions are present, so src < dst keeps exactly one copy
+            keep = src_local < dst_local if undirected else np.ones(len(src_local), bool)
+            keep_t = torch.as_tensor(keep, device=ei.device)
+            src, dst = ei[0][keep_t], ei[1][keep_t]
+            src_local, dst_local = src_local[keep], dst_local[keep]
+
+            emb_chunks.append(((z_node[src] + z_node[dst]) / 2.0).cpu().numpy())
+            pred_chunks.append(
+                model.edge_predictor(torch.cat([z_node[src], z_node[dst]], dim=1))
+                .reshape(-1)
+                .cpu()
+                .numpy()
+            )
+
+            abs_w = batch.edge_attr[keep_t].cpu().numpy()
+            e_type = batch.edge_type[keep_t].cpu().numpy()
+            # edge_type 1 marks an anti-correlated pair, whose weight was stored
+            # as |weight| for the model; restore the sign for the analysis side.
+            signed_w = abs_w * np.where(e_type == 0, 1.0, -1.0)
+            eg = edge_graph[keep_t].cpu().numpy()
+
+            # No edge_type annotation: it is exactly sign(weight).
+            annotations.extend(
+                {
+                    "weight": float(w),
+                    "src_idx": float(s),
+                    "dst_idx": float(d),
+                    "graph_idx": float(graph_idx[g]),
+                    **_groups(y[g], y_ct[g]),
+                }
+                for w, s, d, g in zip(signed_w, src_local, dst_local, eg)
+            )
+            entities.extend(
+                f"{graph_ids[g]}{ENTITY_SEP}{gene_names[s]}{GENE_PAIR_SEP}{gene_names[d]}"
+                for g, s, d in zip(eg, src_local, dst_local)
+            )
+
+            _add_col("graph_id", [graph_ids[g] for g in eg])
+            _add_col("gene_a", [gene_names[s] for s in src_local])
+            _add_col("gene_b", [gene_names[d] for d in dst_local])
+            _add_col("disease", _names(y[eg], disease_classes))
+            _add_col("cell_type", _names(y_ct[eg], ct_classes))
+
+            target_chunks.append(abs_w)
+
+        graph_offset += n_graphs
+
+    result = {
+        "embeddings": np.concatenate(emb_chunks, axis=0).astype(dtype),
+        "annotations": np.array(annotations, dtype=object),
+        "entities": np.array(entities, dtype=object),
+        "prediction": np.concatenate(pred_chunks, axis=0),
+        "target": np.concatenate(target_chunks, axis=0),
+        "level": np.array(level),
+        # Position → class name for the one-hot annotations
+        "disease_classes": np.array(disease_classes, dtype=object),
+        "cell_type_classes": np.array(ct_classes, dtype=object),
+    }
+    result.update(
+        {name: np.array(values, dtype=object) for name, values in columns.items()}
+    )
+
+    return result
+
+
+def save_embeddings(path, embeddings, compress=False):
+    """
+    Write the dict returned by ``extract_embeddings`` to an ``.npz`` file that
+    :class:`gea.dataloader.EmbeddingDataset` can read.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Output path; NumPy appends ``.npz`` when missing.
+    embeddings : dict
+        Output of ``extract_embeddings``.
+    compress : bool
+        Use ``np.savez_compressed``. Smaller files, but slow on large
+        edge-level exports.
+
+    Returns
+    -------
+    str
+        The path actually written.
+    """
+    path = str(path)
+    saver = np.savez_compressed if compress else np.savez
+    saver(path, **embeddings)
+    return path if path.endswith(".npz") else path + ".npz"
+
+
+def export_embeddings(
+    model,
+    loader,
+    device,
+    out_dir,
+    prefix="embeddings",
+    levels=("graph", "node", "edge"),
+    compress=False,
+    **kwargs,
+):
+    """
+    Extract and save several embedding levels in one call, as
+    ``<out_dir>/<prefix>_<level>.npz``.
+
+    Parameters
+    ----------
+    model, loader, device
+        See ``extract_embeddings``.
+    out_dir : str or pathlib.Path
+        Created if it does not exist.
+    prefix : str
+        Filename prefix.
+    levels : iterable of str
+        Subset of ``("graph", "node", "edge")``.
+    compress : bool
+        Passed to ``save_embeddings``.
+    **kwargs
+        Forwarded to ``extract_embeddings`` (``gene_names``, ``label_names``,
+        ``ct_names``, ``undirected``, ``dtype``).
+
+    Returns
+    -------
+    dict
+        Maps level → written file path.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    paths = {}
+    for level in levels:
+        emb = extract_embeddings(model, loader, device, level=level, **kwargs)
+        paths[level] = save_embeddings(
+            out_dir / f"{prefix}_{level}.npz", emb, compress=compress
+        )
+        n, d = emb["embeddings"].shape
+        print(f"{level:>5}-level: {n:>9,} rows × {d} dims → {paths[level]}")
+
+    return paths
 
 
 class ShallowSAE(nn.Module):
