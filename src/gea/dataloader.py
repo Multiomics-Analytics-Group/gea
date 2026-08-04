@@ -264,3 +264,55 @@ class EmbeddingDataset(Dataset):
             "prediction": self.predictions[idx],
             "target": self.targets[idx],
         }
+
+
+def load_embedding_metadata(npz_file) -> pd.DataFrame:
+    """
+    Read the identity of every embedding in an ``.npz`` file as a DataFrame,
+    without loading the embedding matrix into a Dataset.
+
+    Because the loader used by ``gea.gea.extract_embeddings`` is unshuffled, row
+    *i* of this table describes row *i* of the embedding matrix — and therefore
+    row *i* of any SAE activation matrix computed from it. This is the table to
+    join feature activations onto in order to say *which gene, which gene pair
+    (and with which sign), in which graph* a feature fired on.
+
+    Parameters
+    ----------
+    npz_file : str or pathlib.Path
+        File written by ``gea.gea.save_embeddings`` / ``export_embeddings``.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per embedding. Identity columns (``graph_id``, and ``gene`` or
+        ``gene_a``/``gene_b`` for node and edge levels, plus ``disease`` and
+        ``cell_type`` when label names were given), the scalar annotations
+        (including the signed edge ``weight``), and ``entity``, ``prediction``
+        and ``target``.
+
+        The one-hot group annotations are skipped: they say the same thing as the
+        ``disease`` / ``cell_type`` string columns, which are easier to group by.
+    """
+    data = np.load(npz_file, allow_pickle=True)
+
+    id_cols = [
+        c
+        for c in ("graph_id", "gene", "gene_a", "gene_b", "disease", "cell_type")
+        if c in data.files
+    ]
+    df = pd.DataFrame({c: data[c] for c in id_cols})
+
+    annotations = data["annotations"]
+    if len(annotations):
+        for label, value in annotations[0].items():
+            if np.ndim(value) == 0:  # skip one-hot vectors
+                df[label] = [a[label] for a in annotations]
+
+    df["entity"] = data["entities"]
+    prediction = data["prediction"]
+    if prediction.ndim == 1:
+        df["prediction"] = prediction
+    df["target"] = data["target"]
+
+    return df
