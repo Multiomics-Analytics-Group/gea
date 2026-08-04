@@ -1022,3 +1022,294 @@ def plot_feature_activation_heatmap(graph_acts_df, features, label_col="label",
     g.ax_col_dendrogram.legend(handles, unique_labels, loc="center", ncol=len(unique_labels),
                                title="Phenotype", framealpha=0.7)
     return g.fig, g.ax_heatmap
+
+
+# ── SAE activations from exported embeddings ───────────────────────────────────
+
+# Chart parameters. Magnitude gets one sequential hue (blue, light→dark); identity
+# gets the validated categorical order. Text stays in ink colours, never a series
+# colour. Swap these three lists to retheme every plot below.
+_SEQ_BLUE = ["#fcfcfb", "#cde2fb", "#9ec5f4", "#6da7ec",
+             "#3987e5", "#256abf", "#184f95", "#0d366b"]
+_CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+                "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
+_INK, _MUTED = "#52514e", "#898781"
+
+
+def extract_sae_activations(sae_model, npz_file, device, batch_size=4096,
+                            label_col="disease"):
+    """
+    Run a trained SAE over an exported embedding file and return its feature
+    activations joined to the identity of every row.
+
+    This is the ``EmbeddingDataset`` counterpart of ``extract_graph_activations``:
+    the embeddings were already computed by ``gea.gea.export_embeddings``, so the
+    GNN is not re-run, and it works for any level (graph, node or edge).
+
+    Parameters
+    ----------
+    sae_model : ShallowSAE
+        Trained SAE whose ``in_dim`` matches the embedding dimension of the file.
+    npz_file : str or pathlib.Path
+        File written by ``gea.gea.export_embeddings``.
+    device : torch.device
+    batch_size : int
+        Rows per forward pass. Only affects memory, not results.
+    label_col : str
+        Identity column copied to a ``label`` column, which
+        ``differential_feature_activation`` and ``plot_feature_activation_heatmap``
+        expect. Defaults to the phenotype, ``disease``.
+
+    Returns
+    -------
+    pd.DataFrame
+        ``feature_0`` … ``feature_N`` plus every column of
+        ``load_embedding_metadata`` (``graph_id``, ``gene`` / ``gene_a`` +
+        ``gene_b``, ``disease``, ``cell_type``, the signed edge ``weight``, …) and
+        ``label``. Row *i* is row *i* of the embedding file.
+
+    Notes
+    -----
+    Memory scales as rows × SAE latent dim: harmless for the graph level (a few
+    hundred rows) but a node- or edge-level file with ~10^6 rows and a 1024-unit
+    SAE materialises billions of floats. Subsample those levels before calling.
+    """
+    from gea.dataloader import EmbeddingDataset, load_embedding_metadata
+
+    dataset = EmbeddingDataset(npz_file)
+    sae_model.to(device)
+    sae_model.eval()
+
+    chunks = []
+    with torch.no_grad():
+        for start in range(0, len(dataset), batch_size):
+            z, _ = sae_model(dataset.embeddings[start:start + batch_size].to(device))
+            chunks.append(z.cpu().numpy())
+
+    acts = np.concatenate(chunks, axis=0)
+    df = pd.DataFrame(acts, columns=[f"feature_{i}" for i in range(acts.shape[1])])
+    df = pd.concat([df, load_embedding_metadata(npz_file)], axis=1)
+    if label_col in df.columns:
+        df["label"] = df[label_col]
+
+    return df
+
+
+def _annotation_colors(acts_df, annotate, palettes=None):
+    """
+    Assign a colour per category of each annotation column.
+
+    Columns are served in the order given, so the annotation listed first — the
+    one whose categories most need telling apart — gets the leading slots of the
+    validated order, and slices do not overlap. Past eight categories in total the
+    order restarts and a hue means one thing in one strip and something else in
+    another; pass ``palettes`` if that repeat lands somewhere confusing.
+    """
+    if palettes is not None:
+        return {col: dict(palettes[col]) for col in annotate}
+
+    colors, offset = {}, 0
+    for col in annotate:
+        cats = sorted(acts_df[col].unique())
+        colors[col] = {
+            cat: _CATEGORICAL[(offset + i) % len(_CATEGORICAL)]
+            for i, cat in enumerate(cats)
+        }
+        offset += len(cats)
+    return {col: colors[col] for col in annotate}
+
+
+def plot_sae_feature_clustermap(
+    acts_df,
+    annotate=("disease", "cell_type"),
+    min_activation_frac=0.05,
+    scale="feature",
+    palettes=None,
+    method="average",
+    metric="euclidean",
+    figsize=None,
+    label_blocks=None,
+    min_block=4,
+    title="Graph-level SAE feature activations",
+):
+    """
+    Clustered heatmap of SAE feature activations, with one categorical strip per
+    biological annotation and dead features removed.
+
+    Rows (samples) and columns (features) are both hierarchically clustered, so
+    co-firing feature groups and the samples that share them fall next to each
+    other. Cells carry magnitude on a single sequential hue; the annotation strips
+    carry identity on the categorical order.
+
+    Parameters
+    ----------
+    acts_df : pd.DataFrame
+        Output of ``extract_sae_activations`` (or ``extract_graph_activations``)
+        for the graph level: one row per graph.
+    annotate : tuple of str
+        Identity columns to draw as row strips, outermost first. Each gets its own
+        legend, and the first listed gets the most separable hues.
+    min_activation_frac : float
+        Features active (> 0) in fewer than this fraction of rows are dropped, as
+        are features with zero variance: neither can contribute to the clustering,
+        and both flatten the colour scale.
+    scale : {"feature", "none"}
+        ``"feature"`` (default) min-max scales each feature column to 0–1 before
+        clustering and drawing. SAE activation magnitudes differ by an order of
+        magnitude between features, so on a raw scale two loud features saturate
+        the ramp and every other column reads as empty. Scaling shows *which
+        samples* fire a feature, which is what the clustering is about. Use
+        ``"none"`` when absolute activation is the point.
+    palettes : dict, optional
+        ``{annotation_column: {category: colour}}`` to override the default hues.
+    method, metric : str
+        Linkage and distance passed to ``scipy``. ``euclidean`` is the default
+        rather than ``correlation`` because an all-zero row makes correlation
+        distance undefined.
+    figsize : tuple, optional
+        Defaults to a width that scales with the number of surviving features.
+    label_blocks : str or None
+        Annotation column whose contiguous blocks of clustered rows are labelled
+        in text on the right edge, so identity does not rest on colour alone.
+        Defaults to the annotation with the most categories; pass ``None`` to
+        switch off.
+    min_block : int
+        Shortest run of consecutive same-category rows that earns a text label.
+    title : str
+
+    Returns
+    -------
+    g : seaborn.matrix.ClusterGrid
+        ``g.figure`` for saving; ``g.dendrogram_row.reordered_ind`` for the row
+        order actually drawn.
+    alive : list of str
+        Surviving feature columns, in input order.
+
+    Notes
+    -----
+    A binary strip is safe: blue vs orange measures ΔE 24.7 under simulated
+    protanopia (target 8) and 33.6 with normal vision (floor 15). A 7-category
+    strip is not, and no choice of hues fixes it — every 7-hue subset of the
+    palette was measured, and the best (the default here) still bottoms out at
+    ΔE 13.2 with normal vision on its closest pair. Colour therefore cannot be
+    the only channel: the text block labels, the per-strip legends and
+    ``acts_df`` as the table view are what carry identity when two hues are
+    hard to tell apart.
+    """
+    import seaborn as sns
+    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.patches import Patch
+
+    annotate = [c for c in annotate if c in acts_df.columns]
+    if not annotate:
+        raise ValueError(
+            "none of the requested annotation columns are present; "
+            f"available: {[c for c in acts_df.columns if not c.startswith('feature_')]}"
+        )
+
+    feat_cols = [c for c in acts_df.columns if c.startswith("feature_")]
+    alive = [
+        c for c in feat_cols
+        if (acts_df[c] > 0).mean() >= min_activation_frac and acts_df[c].std() > 0
+    ]
+    if not alive:
+        raise ValueError(
+            f"no feature is active in >= {min_activation_frac:.1%} of rows — the "
+            "SAE may be collapsed, or min_activation_frac is too strict."
+        )
+    print(f"Alive: {len(alive)}/{len(feat_cols)} features "
+          f"({len(feat_cols) - len(alive)} dead or constant, dropped)")
+
+    matrix = acts_df[alive]
+    colors = _annotation_colors(acts_df, annotate, palettes)
+    row_colors = pd.DataFrame(
+        {col: acts_df[col].map(colors[col]) for col in annotate},
+        index=acts_df.index,
+    )[list(annotate)]
+
+    figsize = figsize or (min(20.0, 8.0 + 0.05 * len(alive)), 9.0)
+    g = sns.clustermap(
+        matrix,
+        row_colors=row_colors,
+        row_cluster=True,
+        col_cluster=True,
+        method=method,
+        metric=metric,
+        cmap=LinearSegmentedColormap.from_list("gea_sequential", _SEQ_BLUE),
+        figsize=figsize,
+        xticklabels=[c.replace("feature_", "") for c in alive] if len(alive) <= 60 else False,
+        yticklabels=False,
+        standard_scale=1 if scale == "feature" else None,
+        dendrogram_ratio=(0.10, 0.13),
+        colors_ratio=(0.022, 0.02),
+        cbar_pos=(0.02, 0.78, 0.022, 0.15),
+    )
+
+    # Colourbar caption sits above the bar: as a rotated axis label it would run
+    # into the row dendrogram and the annotation strips.
+    g.ax_cbar.set_title(
+        "activation\n(per feature)" if scale == "feature" else "activation",
+        fontsize=8, color=_INK, loc="left", pad=6,
+    )
+    g.ax_cbar.tick_params(labelsize=7, colors=_MUTED, length=2)
+
+    g.ax_heatmap.set_xlabel(f"SAE features ({len(alive)} alive)", color=_INK)
+    g.ax_heatmap.set_ylabel("")
+    g.ax_heatmap.tick_params(axis="x", labelsize=7, colors=_MUTED, rotation=90)
+    # The legends name the strips, so their axis labels would only collide
+    g.ax_row_colors.set_xticks([])
+    for spine in g.ax_heatmap.spines.values():
+        spine.set_visible(False)
+    if title:
+        g.figure.suptitle(title, x=0.02, y=0.98, ha="left", fontsize=13, color="#0b0b0b")
+
+    # Text identity for the widest annotation: label each contiguous block of
+    # clustered rows, so the strips are readable without discriminating hues.
+    if label_blocks is None and annotate:
+        label_blocks = max(annotate, key=lambda c: acts_df[c].nunique())
+    if label_blocks:
+        ordered = acts_df[label_blocks].values[g.dendrogram_row.reordered_ind]
+        n_rows = len(ordered)
+        ticks, labels, start = [], [], 0
+        for i in range(1, n_rows + 1):
+            if i == n_rows or ordered[i] != ordered[start]:
+                if i - start >= min_block:
+                    ticks.append((start + i) / 2)
+                    labels.append(str(ordered[start]))
+                start = i
+        # Heatmap rows run top-to-bottom, y increasing downward
+        g.ax_heatmap.set_yticks(ticks)
+        g.ax_heatmap.set_yticklabels(labels, fontsize=7, color=_INK)
+        g.ax_heatmap.tick_params(axis="y", length=2, colors=_MUTED)
+        g.ax_heatmap.yaxis.set_label_position("right")
+
+    # Squeeze every panel toward the left by the same factor — scaling x0 and
+    # width together keeps the strips aligned with the heatmap rows — so the
+    # legends have room on the right instead of overflowing the figure.
+    for ax in (g.ax_heatmap, g.ax_row_dendrogram, g.ax_col_dendrogram,
+               g.ax_row_colors, g.ax_cbar):
+        if ax is None:
+            continue
+        box = ax.get_position()
+        ax.set_position([box.x0 * 0.72, box.y0, box.width * 0.72, box.height])
+
+    # One legend per strip, stacked to the right of the heatmap
+    y = 0.97
+    for col in annotate:
+        handles = [Patch(facecolor=c, label=str(k)) for k, c in colors[col].items()]
+        legend = g.figure.legend(
+            handles=handles,
+            title=col.replace("_", " "),
+            loc="upper left",
+            bbox_to_anchor=(0.85, y),
+            frameon=False,
+            fontsize=8,
+            title_fontsize=9,
+            handlelength=1.0,
+            handleheight=1.0,
+            labelcolor=_INK,
+        )
+        legend.get_title().set_color(_INK)
+        y -= 0.055 * (len(handles) + 1.6)
+
+    return g, alive
