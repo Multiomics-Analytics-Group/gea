@@ -61,6 +61,9 @@ cover/
 # torch weights
 *.pt
 
+# exported embeddings (gea.gea.export_embeddings)
+*.npz
+
 # Files generated while running GEA
 **.txt
 **.fa
