@@ -368,7 +368,8 @@ def lioness_ppi(
         # Mapping from gene to index
         gene_to_idx = {gene: i for i, gene in enumerate(genes)}
 
-        # Get PPI edges
+        # Get PPI edges — a sorted list, so the edge order of every sample network
+        # (and hence of edge_index and the edge-level export) is the same on every run
         ppi_edges = get_ppi_edges(ppi_network)
 
         # Get indices for the edges that are in the PPI network

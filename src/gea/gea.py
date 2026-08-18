@@ -1,3 +1,4 @@
+import os
 import random
 from pathlib import Path
 
@@ -13,20 +14,98 @@ from torch_geometric.nn import GCNConv, global_mean_pool
 from tqdm import tqdm
 
 
-def set_seed(seed: int = 42) -> None:
+def set_seed(seed: int = 42, deterministic: bool = True) -> None:
     """
-    Set all random seeds for reproducibility across Python, NumPy, and PyTorch.
+    Set all random seeds for reproducibility across Python, NumPy, and PyTorch,
+    and put the GPU kernels in deterministic mode.
 
-    Call this once before constructing any model or data loader.
-    cuDNN is set to deterministic mode so convolutional ops are reproducible
-    at a small performance cost.
+    Call this once at the very top of a script or notebook — before importing
+    anything that creates a CUDA context — and again immediately before every
+    model construction, so a cell can be re-run without depending on how many
+    random numbers the cells above it happened to draw.
+
+    Seeding alone is **not** enough on a GPU. The scatter-add at the heart of
+    message passing (``GCNConv``, ``global_mean_pool``) accumulates with atomics,
+    so the summation order varies between runs and two forward passes of the
+    *same* weights over the *same* graphs differ by ~1e-5. That is invisible in a
+    loss curve but not downstream: SAE activations are thresholded relative to a
+    global maximum, and a tie broken the other way changes which genes a feature
+    fires on, and hence its F1 against a gene set. ``deterministic=True``
+    therefore also requests deterministic kernels, which makes a reloaded
+    checkpoint reproduce its exported embeddings bit for bit.
+
+    Parameters
+    ----------
+    seed : int
+        Seed for ``random``, NumPy and PyTorch (CPU and all CUDA devices).
+    deterministic : bool
+        Request deterministic algorithms (``warn_only=True``, so an op with no
+        deterministic implementation warns instead of raising) and disable the
+        cuDNN autotuner. Costs some speed. Set to False only to trade
+        reproducibility for throughput.
+
+    Notes
+    -----
+    ``PYTHONHASHSEED`` and ``CUBLAS_WORKSPACE_CONFIG`` are set as environment
+    variables. The former only takes effect for *child* processes — the hash seed
+    of a running interpreter is fixed at start-up — which matters for DataLoader
+    workers. The latter must be set before the first cuBLAS handle is created, so
+    calling this function after CUDA is already warm may leave matmuls
+    non-deterministic; hence "at the very top".
     """
+    os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+
+    if deterministic:
+        # Required by cuBLAS for reproducible matmuls on CUDA >= 10.2.
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+        torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.backends.cudnn.deterministic = deterministic
+    torch.backends.cudnn.benchmark = not deterministic
+
+
+def seeded_generator(seed: int = 42) -> torch.Generator:
+    """
+    A ``torch.Generator`` to hand to a shuffling DataLoader.
+
+    ``DataLoader(shuffle=True)`` without a generator draws its permutation from
+    the global RNG, so the batch order depends on every random number consumed
+    before it — a model constructed between ``set_seed`` and the first epoch is
+    enough to change it. Passing an explicit generator pins the shuffle to this
+    seed alone, which is what makes "same weights + same loaders → same numbers"
+    hold across kernel restarts and cell re-runs.
+
+    Parameters
+    ----------
+    seed : int
+
+    Returns
+    -------
+    torch.Generator
+        Fresh generator; a loader consumes its state, so build one per loader
+        (or rebuild it) rather than sharing a single generator.
+    """
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    return generator
+
+
+def seed_worker(worker_id: int) -> None:
+    """
+    ``worker_init_fn`` that reseeds NumPy and ``random`` inside a DataLoader
+    worker.
+
+    PyTorch seeds each worker's *torch* RNG from the loader generator, but leaves
+    NumPy and ``random`` seeded by fork, so any dataset transform using them is
+    reproducible only at ``num_workers=0``. Pass this alongside
+    ``generator=seeded_generator(SEED)`` whenever ``num_workers > 0``.
+    """
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 
 class GNN(nn.Module):

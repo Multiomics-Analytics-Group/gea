@@ -5,7 +5,7 @@ from importlib import metadata
 __version__ = metadata.version("gea")
 
 from gea.utils import compress_embeddings_pca
-from gea.gea import set_seed
+from gea.gea import set_seed, seeded_generator, seed_worker
 
 from gea.analysis import (
     # Activation extraction

@@ -71,7 +71,7 @@ def filter_protein_coding(
 
 
 def load_esm_embeddings(
-    esm_file: str, ensembl_ids: list, aggregation: str = "mean"
+    esm_file: str, ensembl_ids: list, aggregation: str = "mean", seed: int = 42
 ) -> torch.Tensor:
     """
     Load pre-computed ESM-2 embeddings from a saved file, producing one
@@ -81,7 +81,12 @@ def load_esm_embeddings(
         { ensembl_id: { transcript_id: tensor([hidden_dim]) } }
 
     Genes absent from the file receive a random Gaussian embedding so that
-    downstream processing is never blocked by missing entries.
+    downstream processing is never blocked by missing entries. Those draws come
+    from a generator seeded by ``seed``, not from the global RNG: they end up in
+    the node features of every graph, so leaving them to the ambient RNG state
+    would give a different dataset on every run and make nothing downstream
+    reproducible. It also means calling this function does not perturb the global
+    RNG stream, so a later ``set_seed`` is not needed to undo it.
 
     Parameters
     ----------
@@ -92,12 +97,17 @@ def load_esm_embeddings(
         normalised counts DataFrame.
     aggregation : str
         How to collapse isoform embeddings: 'mean' (default) or 'max'.
+    seed : int
+        Seed of the local generator used for the random embeddings of genes
+        missing from the file. Fixed by default so the same gene list always
+        yields the same matrix.
 
     Returns
     -------
     torch.Tensor, shape [len(ensembl_ids), hidden_dim]
     """
     nested = torch.load(esm_file, weights_only=False)
+    generator = torch.Generator().manual_seed(seed)
 
     # Infer embedding dimension from the first stored entry
     first_iso = next(iter(next(iter(nested.values())).values()))
@@ -115,9 +125,13 @@ def load_esm_embeddings(
                 embeddings[i] = isoform_tensors.max(dim=0).values
             found += 1
         else:
-            embeddings[i] = torch.randn(hidden_dim)
+            embeddings[i] = torch.randn(hidden_dim, generator=generator)
 
-    print(f"Found ESM-2 embeddings for {found}/{len(ensembl_ids)} genes.")
+    missing = len(ensembl_ids) - found
+    print(
+        f"Found ESM-2 embeddings for {found}/{len(ensembl_ids)} genes"
+        + (f"; {missing} filled with seed-{seed} Gaussian noise." if missing else ".")
+    )
 
     # L2-normalise so every gene embedding has unit norm.
     # ESM-2 CLS tokens vary widely in magnitude; without this the embedding
@@ -261,14 +275,23 @@ def get_gene_list(gene_data: pd.DataFrame) -> list:
     return gene_data.index.tolist()
 
 
-def get_ppi_edges(ppi_df: pd.DataFrame) -> set:
+def get_ppi_edges(ppi_df: pd.DataFrame) -> list:
     """
-    Return a set of (id_a, id_b) tuples representing PPI edges.
+    Return the unique (id_a, id_b) PPI edges as a **sorted list**.
 
     Uses Ensembl ID columns ('ensemblId_A' / 'ensemblId_B') when present —
     as added by load_string_ppi_network when called with ensembl_to_symbol —
     and falls back to gene-symbol columns ('preferredName_A' / 'preferredName_B')
     otherwise. Rows with NaN identifiers are skipped.
+
+    Sorted, not a set, because the order is not cosmetic: ``lioness_ppi`` turns
+    these edges into the columns of every sample network, so they end up as the
+    column order of ``edge_index`` / ``edge_attr`` in every PyG graph and as the
+    row order of the edge-level embedding export. Iterating a Python set of
+    strings gives an order that depends on ``PYTHONHASHSEED``, which is fixed when
+    the interpreter starts and cannot be set from inside a running process — so a
+    set here would silently permute the edges of every graph on each new process,
+    no matter how carefully the RNGs were seeded.
     """
     if "ensemblId_A" in ppi_df.columns and "ensemblId_B" in ppi_df.columns:
         col_a, col_b = "ensemblId_A", "ensemblId_B"
@@ -281,11 +304,11 @@ def get_ppi_edges(ppi_df: pd.DataFrame) -> set:
         if pd.notna(a) and pd.notna(b):
             ppi_edges.add(tuple(sorted((a, b))))
 
-    return ppi_edges
+    return sorted(ppi_edges)
 
 
 def get_geneformer_embeddings(
-    model: BertModel, vocab: dict, gene_list: list
+    model: BertModel, vocab: dict, gene_list: list, seed: int = 42
 ) -> pd.DataFrame:
     """
     Function used to get gene embeddings from a Geneformer model.
@@ -298,12 +321,17 @@ def get_geneformer_embeddings(
         The token dictionary.
     gene_list: list
         A list of gene symbols for which to extract embeddings.
+    seed: int
+        Seed of the local generator used for the random embeddings of genes with
+        no Geneformer token, so the matrix is a function of the gene list alone
+        and not of the ambient RNG state.
 
     Returns
     -------
     torch.Tensor
         A tensor containing the gene embeddings.
     """
+    generator = torch.Generator().manual_seed(seed)
     # Mapping symbols to Ensembl IDs
     mapping = query_biomart(attributes=["hgnc_symbol", "ensembl_gene_id"])
     mapping = mapping.rename(
@@ -331,11 +359,11 @@ def get_geneformer_embeddings(
                 found += 1
             else:
                 gene_embeddings[i] = torch.randn(
-                    hidden_dim
+                    hidden_dim, generator=generator
                 )  # Random embedding for out-of-bounds token_id
         else:
             gene_embeddings[i] = torch.randn(
-                hidden_dim
+                hidden_dim, generator=generator
             )  # Random embedding for missing gene
 
     print(f"Found embeddings for {found}/{len(gene_list)} genes.")
