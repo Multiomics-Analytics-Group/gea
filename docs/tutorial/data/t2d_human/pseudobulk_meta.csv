@@ -1,0 +1,398 @@
+donor_id,cell_type,disease,n_cells,sample_id
+HP17117-01 T2D,pancreatic ductal cell,type 2 diabetes mellitus,226,HP17117-01 T2D|pancreatic_ductal_cell|type_2_diabetes_mellitus
+HP17117-01 T2D,pancreatic A cell,type 2 diabetes mellitus,1603,HP17117-01 T2D|pancreatic_A_cell|type_2_diabetes_mellitus
+HP17117-01 T2D,pancreatic acinar cell,type 2 diabetes mellitus,92,HP17117-01 T2D|pancreatic_acinar_cell|type_2_diabetes_mellitus
+HP17117-01 T2D,type B pancreatic cell,type 2 diabetes mellitus,1186,HP17117-01 T2D|type_B_pancreatic_cell|type_2_diabetes_mellitus
+HP17117-01 T2D,pancreatic stellate cell,type 2 diabetes mellitus,221,HP17117-01 T2D|pancreatic_stellate_cell|type_2_diabetes_mellitus
+HP17117-01 T2D,pancreatic D cell,type 2 diabetes mellitus,182,HP17117-01 T2D|pancreatic_D_cell|type_2_diabetes_mellitus
+HP17117-01 T2D,pancreatic PP cell,type 2 diabetes mellitus,64,HP17117-01 T2D|pancreatic_PP_cell|type_2_diabetes_mellitus
+HP17117-01 T2D,leukocyte,type 2 diabetes mellitus,27,HP17117-01 T2D|leukocyte|type_2_diabetes_mellitus
+HP17117-01 T2D,endothelial cell,type 2 diabetes mellitus,24,HP17117-01 T2D|endothelial_cell|type_2_diabetes_mellitus
+SAMN08768799,type B pancreatic cell,normal,1089,SAMN08768799|type_B_pancreatic_cell|normal
+SAMN08768799,pancreatic acinar cell,normal,635,SAMN08768799|pancreatic_acinar_cell|normal
+SAMN08768799,pancreatic D cell,normal,69,SAMN08768799|pancreatic_D_cell|normal
+SAMN08768799,pancreatic ductal cell,normal,1085,SAMN08768799|pancreatic_ductal_cell|normal
+SAMN08768799,pancreatic stellate cell,normal,210,SAMN08768799|pancreatic_stellate_cell|normal
+SAMN08768799,pancreatic A cell,normal,603,SAMN08768799|pancreatic_A_cell|normal
+SAMN08768799,leukocyte,normal,24,SAMN08768799|leukocyte|normal
+SAMN08768799,endothelial cell,normal,107,SAMN08768799|endothelial_cell|normal
+HP1720901T2D,pancreatic PP cell,type 2 diabetes mellitus,496,HP1720901T2D|pancreatic_PP_cell|type_2_diabetes_mellitus
+HP1720901T2D,pancreatic A cell,type 2 diabetes mellitus,2329,HP1720901T2D|pancreatic_A_cell|type_2_diabetes_mellitus
+HP1720901T2D,type B pancreatic cell,type 2 diabetes mellitus,2217,HP1720901T2D|type_B_pancreatic_cell|type_2_diabetes_mellitus
+HP1720901T2D,pancreatic acinar cell,type 2 diabetes mellitus,77,HP1720901T2D|pancreatic_acinar_cell|type_2_diabetes_mellitus
+HP1720901T2D,endothelial cell,type 2 diabetes mellitus,47,HP1720901T2D|endothelial_cell|type_2_diabetes_mellitus
+HP1720901T2D,pancreatic ductal cell,type 2 diabetes mellitus,84,HP1720901T2D|pancreatic_ductal_cell|type_2_diabetes_mellitus
+HP1720901T2D,pancreatic stellate cell,type 2 diabetes mellitus,168,HP1720901T2D|pancreatic_stellate_cell|type_2_diabetes_mellitus
+HP1720901T2D,pancreatic D cell,type 2 diabetes mellitus,283,HP1720901T2D|pancreatic_D_cell|type_2_diabetes_mellitus
+HP1720901T2D,leukocyte,type 2 diabetes mellitus,25,HP1720901T2D|leukocyte|type_2_diabetes_mellitus
+HP17225-01T2D,pancreatic ductal cell,type 2 diabetes mellitus,1497,HP17225-01T2D|pancreatic_ductal_cell|type_2_diabetes_mellitus
+HP17225-01T2D,pancreatic stellate cell,type 2 diabetes mellitus,824,HP17225-01T2D|pancreatic_stellate_cell|type_2_diabetes_mellitus
+HP17225-01T2D,pancreatic PP cell,type 2 diabetes mellitus,277,HP17225-01T2D|pancreatic_PP_cell|type_2_diabetes_mellitus
+HP17225-01T2D,type B pancreatic cell,type 2 diabetes mellitus,833,HP17225-01T2D|type_B_pancreatic_cell|type_2_diabetes_mellitus
+HP17225-01T2D,pancreatic A cell,type 2 diabetes mellitus,1161,HP17225-01T2D|pancreatic_A_cell|type_2_diabetes_mellitus
+HP17225-01T2D,pancreatic acinar cell,type 2 diabetes mellitus,188,HP17225-01T2D|pancreatic_acinar_cell|type_2_diabetes_mellitus
+HP17225-01T2D,pancreatic D cell,type 2 diabetes mellitus,97,HP17225-01T2D|pancreatic_D_cell|type_2_diabetes_mellitus
+HP17225-01T2D,leukocyte,type 2 diabetes mellitus,46,HP17225-01T2D|leukocyte|type_2_diabetes_mellitus
+HP17225-01T2D,endothelial cell,type 2 diabetes mellitus,173,HP17225-01T2D|endothelial_cell|type_2_diabetes_mellitus
+HP17300-01T2D,pancreatic ductal cell,type 2 diabetes mellitus,693,HP17300-01T2D|pancreatic_ductal_cell|type_2_diabetes_mellitus
+HP17300-01T2D,type B pancreatic cell,type 2 diabetes mellitus,592,HP17300-01T2D|type_B_pancreatic_cell|type_2_diabetes_mellitus
+HP17300-01T2D,pancreatic A cell,type 2 diabetes mellitus,886,HP17300-01T2D|pancreatic_A_cell|type_2_diabetes_mellitus
+HP17300-01T2D,pancreatic acinar cell,type 2 diabetes mellitus,501,HP17300-01T2D|pancreatic_acinar_cell|type_2_diabetes_mellitus
+HP17300-01T2D,pancreatic D cell,type 2 diabetes mellitus,105,HP17300-01T2D|pancreatic_D_cell|type_2_diabetes_mellitus
+HP17300-01T2D,pancreatic stellate cell,type 2 diabetes mellitus,139,HP17300-01T2D|pancreatic_stellate_cell|type_2_diabetes_mellitus
+HP17300-01T2D,pancreatic PP cell,type 2 diabetes mellitus,52,HP17300-01T2D|pancreatic_PP_cell|type_2_diabetes_mellitus
+HP17300-01T2D,endothelial cell,type 2 diabetes mellitus,63,HP17300-01T2D|endothelial_cell|type_2_diabetes_mellitus
+HP17300-01T2D,leukocyte,type 2 diabetes mellitus,41,HP17300-01T2D|leukocyte|type_2_diabetes_mellitus
+SAMN08769026,pancreatic ductal cell,type 2 diabetes mellitus,1065,SAMN08769026|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN08769026,pancreatic acinar cell,type 2 diabetes mellitus,756,SAMN08769026|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN08769026,pancreatic A cell,type 2 diabetes mellitus,1592,SAMN08769026|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN08769026,type B pancreatic cell,type 2 diabetes mellitus,582,SAMN08769026|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN08769026,pancreatic PP cell,type 2 diabetes mellitus,101,SAMN08769026|pancreatic_PP_cell|type_2_diabetes_mellitus
+SAMN08769026,pancreatic stellate cell,type 2 diabetes mellitus,543,SAMN08769026|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN08769026,endothelial cell,type 2 diabetes mellitus,84,SAMN08769026|endothelial_cell|type_2_diabetes_mellitus
+SAMN08769026,leukocyte,type 2 diabetes mellitus,55,SAMN08769026|leukocyte|type_2_diabetes_mellitus
+SAMN08769026,pancreatic D cell,type 2 diabetes mellitus,48,SAMN08769026|pancreatic_D_cell|type_2_diabetes_mellitus
+HP18054-01,pancreatic D cell,normal,198,HP18054-01|pancreatic_D_cell|normal
+HP18054-01,type B pancreatic cell,normal,2732,HP18054-01|type_B_pancreatic_cell|normal
+HP18054-01,pancreatic ductal cell,normal,618,HP18054-01|pancreatic_ductal_cell|normal
+HP18054-01,pancreatic PP cell,normal,45,HP18054-01|pancreatic_PP_cell|normal
+HP18054-01,pancreatic A cell,normal,943,HP18054-01|pancreatic_A_cell|normal
+HP18054-01,pancreatic acinar cell,normal,472,HP18054-01|pancreatic_acinar_cell|normal
+HP18054-01,pancreatic stellate cell,normal,142,HP18054-01|pancreatic_stellate_cell|normal
+HP18054-01,endothelial cell,normal,41,HP18054-01|endothelial_cell|normal
+HP18054-01,leukocyte,normal,47,HP18054-01|leukocyte|normal
+SAMN09370567,type B pancreatic cell,normal,2125,SAMN09370567|type_B_pancreatic_cell|normal
+SAMN09370567,pancreatic D cell,normal,356,SAMN09370567|pancreatic_D_cell|normal
+SAMN09370567,pancreatic A cell,normal,2501,SAMN09370567|pancreatic_A_cell|normal
+SAMN09370567,pancreatic ductal cell,normal,278,SAMN09370567|pancreatic_ductal_cell|normal
+SAMN09370567,pancreatic stellate cell,normal,168,SAMN09370567|pancreatic_stellate_cell|normal
+SAMN09370567,endothelial cell,normal,66,SAMN09370567|endothelial_cell|normal
+SAMN09370567,leukocyte,normal,20,SAMN09370567|leukocyte|normal
+SAMN09370567,pancreatic acinar cell,normal,134,SAMN09370567|pancreatic_acinar_cell|normal
+HP18304,pancreatic ductal cell,normal,1243,HP18304|pancreatic_ductal_cell|normal
+HP18304,pancreatic acinar cell,normal,610,HP18304|pancreatic_acinar_cell|normal
+HP18304,pancreatic A cell,normal,638,HP18304|pancreatic_A_cell|normal
+HP18304,type B pancreatic cell,normal,686,HP18304|type_B_pancreatic_cell|normal
+HP18304,pancreatic PP cell,normal,184,HP18304|pancreatic_PP_cell|normal
+HP18304,pancreatic D cell,normal,124,HP18304|pancreatic_D_cell|normal
+HP18304,leukocyte,normal,21,HP18304|leukocyte|normal
+HP18304,endothelial cell,normal,26,HP18304|endothelial_cell|normal
+HP18304,pancreatic stellate cell,normal,73,HP18304|pancreatic_stellate_cell|normal
+SAMN10372788,pancreatic A cell,type 2 diabetes mellitus,848,SAMN10372788|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN10372788,type B pancreatic cell,type 2 diabetes mellitus,1116,SAMN10372788|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN10372788,pancreatic ductal cell,type 2 diabetes mellitus,549,SAMN10372788|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN10372788,endothelial cell,type 2 diabetes mellitus,96,SAMN10372788|endothelial_cell|type_2_diabetes_mellitus
+SAMN10372788,pancreatic acinar cell,type 2 diabetes mellitus,320,SAMN10372788|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN10372788,pancreatic stellate cell,type 2 diabetes mellitus,241,SAMN10372788|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN10372788,pancreatic D cell,type 2 diabetes mellitus,77,SAMN10372788|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN10439569,pancreatic ductal cell,prediabetes syndrome,364,SAMN10439569|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN10439569,pancreatic A cell,prediabetes syndrome,1204,SAMN10439569|pancreatic_A_cell|prediabetes_syndrome
+SAMN10439569,type B pancreatic cell,prediabetes syndrome,1636,SAMN10439569|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN10439569,leukocyte,prediabetes syndrome,35,SAMN10439569|leukocyte|prediabetes_syndrome
+SAMN10439569,pancreatic acinar cell,prediabetes syndrome,323,SAMN10439569|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN10439569,pancreatic stellate cell,prediabetes syndrome,430,SAMN10439569|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN10439569,pancreatic PP cell,prediabetes syndrome,53,SAMN10439569|pancreatic_PP_cell|prediabetes_syndrome
+SAMN10439569,endothelial cell,prediabetes syndrome,213,SAMN10439569|endothelial_cell|prediabetes_syndrome
+SAMN10439569,pancreatic D cell,prediabetes syndrome,172,SAMN10439569|pancreatic_D_cell|prediabetes_syndrome
+HP18320-01T2D,type B pancreatic cell,type 2 diabetes mellitus,920,HP18320-01T2D|type_B_pancreatic_cell|type_2_diabetes_mellitus
+HP18320-01T2D,pancreatic ductal cell,type 2 diabetes mellitus,738,HP18320-01T2D|pancreatic_ductal_cell|type_2_diabetes_mellitus
+HP18320-01T2D,pancreatic A cell,type 2 diabetes mellitus,1609,HP18320-01T2D|pancreatic_A_cell|type_2_diabetes_mellitus
+HP18320-01T2D,pancreatic acinar cell,type 2 diabetes mellitus,270,HP18320-01T2D|pancreatic_acinar_cell|type_2_diabetes_mellitus
+HP18320-01T2D,pancreatic D cell,type 2 diabetes mellitus,166,HP18320-01T2D|pancreatic_D_cell|type_2_diabetes_mellitus
+HP18320-01T2D,leukocyte,type 2 diabetes mellitus,30,HP18320-01T2D|leukocyte|type_2_diabetes_mellitus
+HP18320-01T2D,pancreatic stellate cell,type 2 diabetes mellitus,123,HP18320-01T2D|pancreatic_stellate_cell|type_2_diabetes_mellitus
+HP18320-01T2D,pancreatic PP cell,type 2 diabetes mellitus,26,HP18320-01T2D|pancreatic_PP_cell|type_2_diabetes_mellitus
+HP18320-01T2D,endothelial cell,type 2 diabetes mellitus,20,HP18320-01T2D|endothelial_cell|type_2_diabetes_mellitus
+SAMN10737781,type B pancreatic cell,normal,1457,SAMN10737781|type_B_pancreatic_cell|normal
+SAMN10737781,endothelial cell,normal,112,SAMN10737781|endothelial_cell|normal
+SAMN10737781,pancreatic A cell,normal,1702,SAMN10737781|pancreatic_A_cell|normal
+SAMN10737781,pancreatic D cell,normal,208,SAMN10737781|pancreatic_D_cell|normal
+SAMN10737781,pancreatic ductal cell,normal,196,SAMN10737781|pancreatic_ductal_cell|normal
+SAMN10737781,pancreatic acinar cell,normal,131,SAMN10737781|pancreatic_acinar_cell|normal
+SAMN10737781,pancreatic stellate cell,normal,170,SAMN10737781|pancreatic_stellate_cell|normal
+SAMN10832912,pancreatic A cell,type 2 diabetes mellitus,1730,SAMN10832912|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN10832912,type B pancreatic cell,type 2 diabetes mellitus,2144,SAMN10832912|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN10832912,pancreatic D cell,type 2 diabetes mellitus,362,SAMN10832912|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN10832912,pancreatic PP cell,type 2 diabetes mellitus,47,SAMN10832912|pancreatic_PP_cell|type_2_diabetes_mellitus
+SAMN10832912,pancreatic acinar cell,type 2 diabetes mellitus,107,SAMN10832912|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN10832912,pancreatic ductal cell,type 2 diabetes mellitus,233,SAMN10832912|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN10832912,pancreatic stellate cell,type 2 diabetes mellitus,102,SAMN10832912|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN10873960,type B pancreatic cell,normal,2696,SAMN10873960|type_B_pancreatic_cell|normal
+SAMN10873960,pancreatic ductal cell,normal,526,SAMN10873960|pancreatic_ductal_cell|normal
+SAMN10873960,pancreatic A cell,normal,2352,SAMN10873960|pancreatic_A_cell|normal
+SAMN10873960,pancreatic acinar cell,normal,667,SAMN10873960|pancreatic_acinar_cell|normal
+SAMN10873960,pancreatic D cell,normal,204,SAMN10873960|pancreatic_D_cell|normal
+SAMN10873960,pancreatic stellate cell,normal,225,SAMN10873960|pancreatic_stellate_cell|normal
+SAMN10873960,leukocyte,normal,26,SAMN10873960|leukocyte|normal
+SAMN10873960,endothelial cell,normal,44,SAMN10873960|endothelial_cell|normal
+HP19047-01,pancreatic A cell,normal,2289,HP19047-01|pancreatic_A_cell|normal
+HP19047-01,endothelial cell,normal,156,HP19047-01|endothelial_cell|normal
+HP19047-01,type B pancreatic cell,normal,3483,HP19047-01|type_B_pancreatic_cell|normal
+HP19047-01,pancreatic acinar cell,normal,295,HP19047-01|pancreatic_acinar_cell|normal
+HP19047-01,pancreatic D cell,normal,400,HP19047-01|pancreatic_D_cell|normal
+HP19047-01,pancreatic ductal cell,normal,347,HP19047-01|pancreatic_ductal_cell|normal
+HP19047-01,pancreatic stellate cell,normal,154,HP19047-01|pancreatic_stellate_cell|normal
+HP19047-01,pancreatic PP cell,normal,154,HP19047-01|pancreatic_PP_cell|normal
+HP19047-01,leukocyte,normal,24,HP19047-01|leukocyte|normal
+HP19044-01T2D,type B pancreatic cell,type 2 diabetes mellitus,1311,HP19044-01T2D|type_B_pancreatic_cell|type_2_diabetes_mellitus
+HP19044-01T2D,pancreatic ductal cell,type 2 diabetes mellitus,478,HP19044-01T2D|pancreatic_ductal_cell|type_2_diabetes_mellitus
+HP19044-01T2D,pancreatic A cell,type 2 diabetes mellitus,2832,HP19044-01T2D|pancreatic_A_cell|type_2_diabetes_mellitus
+HP19044-01T2D,pancreatic PP cell,type 2 diabetes mellitus,178,HP19044-01T2D|pancreatic_PP_cell|type_2_diabetes_mellitus
+HP19044-01T2D,pancreatic acinar cell,type 2 diabetes mellitus,487,HP19044-01T2D|pancreatic_acinar_cell|type_2_diabetes_mellitus
+HP19044-01T2D,pancreatic stellate cell,type 2 diabetes mellitus,456,HP19044-01T2D|pancreatic_stellate_cell|type_2_diabetes_mellitus
+HP19044-01T2D,pancreatic D cell,type 2 diabetes mellitus,295,HP19044-01T2D|pancreatic_D_cell|type_2_diabetes_mellitus
+HP19044-01T2D,endothelial cell,type 2 diabetes mellitus,111,HP19044-01T2D|endothelial_cell|type_2_diabetes_mellitus
+HP19044-01T2D,leukocyte,type 2 diabetes mellitus,29,HP19044-01T2D|leukocyte|type_2_diabetes_mellitus
+SAMN11008921,pancreatic A cell,prediabetes syndrome,1240,SAMN11008921|pancreatic_A_cell|prediabetes_syndrome
+SAMN11008921,type B pancreatic cell,prediabetes syndrome,1018,SAMN11008921|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN11008921,pancreatic ductal cell,prediabetes syndrome,757,SAMN11008921|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN11008921,pancreatic acinar cell,prediabetes syndrome,238,SAMN11008921|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN11008921,leukocyte,prediabetes syndrome,75,SAMN11008921|leukocyte|prediabetes_syndrome
+SAMN11008921,pancreatic stellate cell,prediabetes syndrome,326,SAMN11008921|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN11008921,endothelial cell,prediabetes syndrome,136,SAMN11008921|endothelial_cell|prediabetes_syndrome
+SAMN11008921,pancreatic D cell,prediabetes syndrome,94,SAMN11008921|pancreatic_D_cell|prediabetes_syndrome
+SAMN11157311,pancreatic A cell,type 2 diabetes mellitus,1918,SAMN11157311|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN11157311,pancreatic stellate cell,type 2 diabetes mellitus,519,SAMN11157311|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN11157311,type B pancreatic cell,type 2 diabetes mellitus,1946,SAMN11157311|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN11157311,pancreatic acinar cell,type 2 diabetes mellitus,114,SAMN11157311|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN11157311,pancreatic ductal cell,type 2 diabetes mellitus,567,SAMN11157311|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN11157311,pancreatic D cell,type 2 diabetes mellitus,130,SAMN11157311|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN11157311,endothelial cell,type 2 diabetes mellitus,130,SAMN11157311|endothelial_cell|type_2_diabetes_mellitus
+SAMN11157311,leukocyte,type 2 diabetes mellitus,39,SAMN11157311|leukocyte|type_2_diabetes_mellitus
+SAMN11373103,pancreatic ductal cell,prediabetes syndrome,880,SAMN11373103|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN11373103,type B pancreatic cell,prediabetes syndrome,1534,SAMN11373103|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN11373103,pancreatic A cell,prediabetes syndrome,1240,SAMN11373103|pancreatic_A_cell|prediabetes_syndrome
+SAMN11373103,pancreatic PP cell,prediabetes syndrome,147,SAMN11373103|pancreatic_PP_cell|prediabetes_syndrome
+SAMN11373103,pancreatic D cell,prediabetes syndrome,183,SAMN11373103|pancreatic_D_cell|prediabetes_syndrome
+SAMN11373103,pancreatic acinar cell,prediabetes syndrome,386,SAMN11373103|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN11373103,pancreatic stellate cell,prediabetes syndrome,51,SAMN11373103|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN11373103,endothelial cell,prediabetes syndrome,26,SAMN11373103|endothelial_cell|prediabetes_syndrome
+SAMN11380903,type B pancreatic cell,normal,2736,SAMN11380903|type_B_pancreatic_cell|normal
+SAMN11380903,endothelial cell,normal,42,SAMN11380903|endothelial_cell|normal
+SAMN11380903,pancreatic A cell,normal,1950,SAMN11380903|pancreatic_A_cell|normal
+SAMN11380903,pancreatic acinar cell,normal,253,SAMN11380903|pancreatic_acinar_cell|normal
+SAMN11380903,pancreatic ductal cell,normal,177,SAMN11380903|pancreatic_ductal_cell|normal
+SAMN11380903,pancreatic D cell,normal,254,SAMN11380903|pancreatic_D_cell|normal
+SAMN11380903,pancreatic stellate cell,normal,126,SAMN11380903|pancreatic_stellate_cell|normal
+SAMN11476721,type B pancreatic cell,prediabetes syndrome,2935,SAMN11476721|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN11476721,endothelial cell,prediabetes syndrome,119,SAMN11476721|endothelial_cell|prediabetes_syndrome
+SAMN11476721,pancreatic A cell,prediabetes syndrome,2008,SAMN11476721|pancreatic_A_cell|prediabetes_syndrome
+SAMN11476721,pancreatic acinar cell,prediabetes syndrome,314,SAMN11476721|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN11476721,pancreatic PP cell,prediabetes syndrome,284,SAMN11476721|pancreatic_PP_cell|prediabetes_syndrome
+SAMN11476721,pancreatic D cell,prediabetes syndrome,348,SAMN11476721|pancreatic_D_cell|prediabetes_syndrome
+SAMN11476721,pancreatic ductal cell,prediabetes syndrome,472,SAMN11476721|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN11476721,pancreatic stellate cell,prediabetes syndrome,143,SAMN11476721|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN11476721,leukocyte,prediabetes syndrome,72,SAMN11476721|leukocyte|prediabetes_syndrome
+SAMN11483342,pancreatic A cell,prediabetes syndrome,3791,SAMN11483342|pancreatic_A_cell|prediabetes_syndrome
+SAMN11483342,pancreatic stellate cell,prediabetes syndrome,253,SAMN11483342|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN11483342,pancreatic ductal cell,prediabetes syndrome,520,SAMN11483342|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN11483342,type B pancreatic cell,prediabetes syndrome,2217,SAMN11483342|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN11483342,pancreatic acinar cell,prediabetes syndrome,281,SAMN11483342|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN11483342,endothelial cell,prediabetes syndrome,126,SAMN11483342|endothelial_cell|prediabetes_syndrome
+SAMN11483342,leukocyte,prediabetes syndrome,35,SAMN11483342|leukocyte|prediabetes_syndrome
+SAMN11483342,pancreatic D cell,prediabetes syndrome,163,SAMN11483342|pancreatic_D_cell|prediabetes_syndrome
+SAMN11523048,type B pancreatic cell,normal,4558,SAMN11523048|type_B_pancreatic_cell|normal
+SAMN11523048,pancreatic A cell,normal,3474,SAMN11523048|pancreatic_A_cell|normal
+SAMN11523048,pancreatic D cell,normal,1099,SAMN11523048|pancreatic_D_cell|normal
+SAMN11523048,pancreatic ductal cell,normal,145,SAMN11523048|pancreatic_ductal_cell|normal
+SAMN11523048,pancreatic acinar cell,normal,89,SAMN11523048|pancreatic_acinar_cell|normal
+SAMN11523048,pancreatic PP cell,normal,110,SAMN11523048|pancreatic_PP_cell|normal
+SAMN11523048,endothelial cell,normal,216,SAMN11523048|endothelial_cell|normal
+SAMN11523048,pancreatic stellate cell,normal,371,SAMN11523048|pancreatic_stellate_cell|normal
+SAMN11523048,leukocyte,normal,40,SAMN11523048|leukocyte|normal
+SAMN11522709,endothelial cell,prediabetes syndrome,476,SAMN11522709|endothelial_cell|prediabetes_syndrome
+SAMN11522709,pancreatic ductal cell,prediabetes syndrome,1429,SAMN11522709|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN11522709,type B pancreatic cell,prediabetes syndrome,5294,SAMN11522709|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN11522709,pancreatic stellate cell,prediabetes syndrome,971,SAMN11522709|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN11522709,pancreatic D cell,prediabetes syndrome,681,SAMN11522709|pancreatic_D_cell|prediabetes_syndrome
+SAMN11522709,pancreatic acinar cell,prediabetes syndrome,1196,SAMN11522709|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN11522709,pancreatic A cell,prediabetes syndrome,2526,SAMN11522709|pancreatic_A_cell|prediabetes_syndrome
+SAMN11522709,pancreatic PP cell,prediabetes syndrome,210,SAMN11522709|pancreatic_PP_cell|prediabetes_syndrome
+SAMN11522709,leukocyte,prediabetes syndrome,101,SAMN11522709|leukocyte|prediabetes_syndrome
+SAMN11633049,pancreatic stellate cell,normal,196,SAMN11633049|pancreatic_stellate_cell|normal
+SAMN11633049,type B pancreatic cell,normal,2138,SAMN11633049|type_B_pancreatic_cell|normal
+SAMN11633049,pancreatic A cell,normal,1132,SAMN11633049|pancreatic_A_cell|normal
+SAMN11633049,pancreatic ductal cell,normal,581,SAMN11633049|pancreatic_ductal_cell|normal
+SAMN11633049,endothelial cell,normal,127,SAMN11633049|endothelial_cell|normal
+SAMN11633049,pancreatic PP cell,normal,97,SAMN11633049|pancreatic_PP_cell|normal
+SAMN11633049,pancreatic D cell,normal,39,SAMN11633049|pancreatic_D_cell|normal
+SAMN11633049,leukocyte,normal,51,SAMN11633049|leukocyte|normal
+SAMN11633049,pancreatic acinar cell,normal,340,SAMN11633049|pancreatic_acinar_cell|normal
+SAMN11642375,pancreatic A cell,type 2 diabetes mellitus,2623,SAMN11642375|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN11642375,pancreatic stellate cell,type 2 diabetes mellitus,361,SAMN11642375|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN11642375,leukocyte,type 2 diabetes mellitus,30,SAMN11642375|leukocyte|type_2_diabetes_mellitus
+SAMN11642375,pancreatic ductal cell,type 2 diabetes mellitus,1498,SAMN11642375|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN11642375,type B pancreatic cell,type 2 diabetes mellitus,1453,SAMN11642375|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN11642375,pancreatic acinar cell,type 2 diabetes mellitus,289,SAMN11642375|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN11642375,pancreatic D cell,type 2 diabetes mellitus,256,SAMN11642375|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN11642375,pancreatic PP cell,type 2 diabetes mellitus,49,SAMN11642375|pancreatic_PP_cell|type_2_diabetes_mellitus
+SAMN11642375,endothelial cell,type 2 diabetes mellitus,105,SAMN11642375|endothelial_cell|type_2_diabetes_mellitus
+SAMN11864195,type B pancreatic cell,normal,2831,SAMN11864195|type_B_pancreatic_cell|normal
+SAMN11864195,pancreatic ductal cell,normal,823,SAMN11864195|pancreatic_ductal_cell|normal
+SAMN11864195,pancreatic A cell,normal,1304,SAMN11864195|pancreatic_A_cell|normal
+SAMN11864195,pancreatic D cell,normal,326,SAMN11864195|pancreatic_D_cell|normal
+SAMN11864195,pancreatic stellate cell,normal,72,SAMN11864195|pancreatic_stellate_cell|normal
+SAMN11864195,endothelial cell,normal,43,SAMN11864195|endothelial_cell|normal
+SAMN11864195,pancreatic acinar cell,normal,133,SAMN11864195|pancreatic_acinar_cell|normal
+SAMN11867362,pancreatic A cell,prediabetes syndrome,2723,SAMN11867362|pancreatic_A_cell|prediabetes_syndrome
+SAMN11867362,pancreatic stellate cell,prediabetes syndrome,143,SAMN11867362|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN11867362,type B pancreatic cell,prediabetes syndrome,2128,SAMN11867362|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN11867362,endothelial cell,prediabetes syndrome,80,SAMN11867362|endothelial_cell|prediabetes_syndrome
+SAMN11867362,pancreatic ductal cell,prediabetes syndrome,77,SAMN11867362|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN11867362,pancreatic D cell,prediabetes syndrome,267,SAMN11867362|pancreatic_D_cell|prediabetes_syndrome
+SAMN11867362,leukocyte,prediabetes syndrome,51,SAMN11867362|leukocyte|prediabetes_syndrome
+SAMN11867362,pancreatic acinar cell,prediabetes syndrome,50,SAMN11867362|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN12022246,type B pancreatic cell,prediabetes syndrome,2775,SAMN12022246|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN12022246,pancreatic ductal cell,prediabetes syndrome,357,SAMN12022246|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN12022246,pancreatic acinar cell,prediabetes syndrome,524,SAMN12022246|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN12022246,pancreatic PP cell,prediabetes syndrome,119,SAMN12022246|pancreatic_PP_cell|prediabetes_syndrome
+SAMN12022246,pancreatic A cell,prediabetes syndrome,451,SAMN12022246|pancreatic_A_cell|prediabetes_syndrome
+SAMN12022246,pancreatic D cell,prediabetes syndrome,214,SAMN12022246|pancreatic_D_cell|prediabetes_syndrome
+SAMN12022246,endothelial cell,prediabetes syndrome,45,SAMN12022246|endothelial_cell|prediabetes_syndrome
+SAMN12022246,pancreatic stellate cell,prediabetes syndrome,124,SAMN12022246|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN12022246,leukocyte,prediabetes syndrome,44,SAMN12022246|leukocyte|prediabetes_syndrome
+SAMN12500521,type B pancreatic cell,normal,2248,SAMN12500521|type_B_pancreatic_cell|normal
+SAMN12500521,pancreatic A cell,normal,2250,SAMN12500521|pancreatic_A_cell|normal
+SAMN12500521,pancreatic stellate cell,normal,76,SAMN12500521|pancreatic_stellate_cell|normal
+SAMN12500521,pancreatic ductal cell,normal,139,SAMN12500521|pancreatic_ductal_cell|normal
+SAMN12500521,endothelial cell,normal,30,SAMN12500521|endothelial_cell|normal
+SAMN12500521,pancreatic D cell,normal,176,SAMN12500521|pancreatic_D_cell|normal
+SAMN12500521,leukocyte,normal,30,SAMN12500521|leukocyte|normal
+SAMN12500521,pancreatic acinar cell,normal,22,SAMN12500521|pancreatic_acinar_cell|normal
+SAMN12633894,pancreatic acinar cell,prediabetes syndrome,383,SAMN12633894|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN12633894,pancreatic A cell,prediabetes syndrome,991,SAMN12633894|pancreatic_A_cell|prediabetes_syndrome
+SAMN12633894,pancreatic ductal cell,prediabetes syndrome,341,SAMN12633894|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN12633894,type B pancreatic cell,prediabetes syndrome,1341,SAMN12633894|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN12633894,pancreatic D cell,prediabetes syndrome,99,SAMN12633894|pancreatic_D_cell|prediabetes_syndrome
+SAMN12633894,pancreatic stellate cell,prediabetes syndrome,194,SAMN12633894|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN12633894,pancreatic PP cell,prediabetes syndrome,46,SAMN12633894|pancreatic_PP_cell|prediabetes_syndrome
+SAMN12633894,endothelial cell,prediabetes syndrome,62,SAMN12633894|endothelial_cell|prediabetes_syndrome
+SAMN12633894,leukocyte,prediabetes syndrome,32,SAMN12633894|leukocyte|prediabetes_syndrome
+SAMN12634037,pancreatic A cell,type 2 diabetes mellitus,1017,SAMN12634037|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN12634037,type B pancreatic cell,type 2 diabetes mellitus,720,SAMN12634037|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN12634037,pancreatic D cell,type 2 diabetes mellitus,81,SAMN12634037|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN12634037,pancreatic stellate cell,type 2 diabetes mellitus,68,SAMN12634037|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN12634037,pancreatic acinar cell,type 2 diabetes mellitus,181,SAMN12634037|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN12634037,pancreatic ductal cell,type 2 diabetes mellitus,236,SAMN12634037|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN12673306,pancreatic acinar cell,normal,179,SAMN12673306|pancreatic_acinar_cell|normal
+SAMN12673306,pancreatic A cell,normal,1080,SAMN12673306|pancreatic_A_cell|normal
+SAMN12673306,pancreatic D cell,normal,124,SAMN12673306|pancreatic_D_cell|normal
+SAMN12673306,type B pancreatic cell,normal,844,SAMN12673306|type_B_pancreatic_cell|normal
+SAMN12673306,endothelial cell,normal,178,SAMN12673306|endothelial_cell|normal
+SAMN12673306,pancreatic stellate cell,normal,615,SAMN12673306|pancreatic_stellate_cell|normal
+SAMN12673306,pancreatic ductal cell,normal,231,SAMN12673306|pancreatic_ductal_cell|normal
+SAMN12673306,pancreatic PP cell,normal,123,SAMN12673306|pancreatic_PP_cell|normal
+SAMN12673306,leukocyte,normal,47,SAMN12673306|leukocyte|normal
+SAMN13108021,type B pancreatic cell,normal,1395,SAMN13108021|type_B_pancreatic_cell|normal
+SAMN13108021,pancreatic A cell,normal,1039,SAMN13108021|pancreatic_A_cell|normal
+SAMN13108021,pancreatic acinar cell,normal,35,SAMN13108021|pancreatic_acinar_cell|normal
+SAMN13108021,pancreatic D cell,normal,206,SAMN13108021|pancreatic_D_cell|normal
+SAMN13108021,pancreatic stellate cell,normal,77,SAMN13108021|pancreatic_stellate_cell|normal
+SAMN13108021,pancreatic ductal cell,normal,30,SAMN13108021|pancreatic_ductal_cell|normal
+SAMN13320559,pancreatic D cell,type 2 diabetes mellitus,168,SAMN13320559|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN13320559,type B pancreatic cell,type 2 diabetes mellitus,1485,SAMN13320559|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN13320559,pancreatic stellate cell,type 2 diabetes mellitus,107,SAMN13320559|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN13320559,endothelial cell,type 2 diabetes mellitus,62,SAMN13320559|endothelial_cell|type_2_diabetes_mellitus
+SAMN13320559,pancreatic ductal cell,type 2 diabetes mellitus,899,SAMN13320559|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN13320559,pancreatic PP cell,type 2 diabetes mellitus,150,SAMN13320559|pancreatic_PP_cell|type_2_diabetes_mellitus
+SAMN13320559,pancreatic A cell,type 2 diabetes mellitus,923,SAMN13320559|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN13320559,pancreatic acinar cell,type 2 diabetes mellitus,257,SAMN13320559|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN13320559,leukocyte,type 2 diabetes mellitus,24,SAMN13320559|leukocyte|type_2_diabetes_mellitus
+SAMN13319813,pancreatic A cell,prediabetes syndrome,1822,SAMN13319813|pancreatic_A_cell|prediabetes_syndrome
+SAMN13319813,type B pancreatic cell,prediabetes syndrome,3341,SAMN13319813|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN13319813,pancreatic ductal cell,prediabetes syndrome,276,SAMN13319813|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN13319813,pancreatic acinar cell,prediabetes syndrome,143,SAMN13319813|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN13319813,endothelial cell,prediabetes syndrome,77,SAMN13319813|endothelial_cell|prediabetes_syndrome
+SAMN13319813,pancreatic stellate cell,prediabetes syndrome,383,SAMN13319813|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN13319813,pancreatic D cell,prediabetes syndrome,142,SAMN13319813|pancreatic_D_cell|prediabetes_syndrome
+SAMN13866285,type B pancreatic cell,prediabetes syndrome,3818,SAMN13866285|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN13866285,pancreatic A cell,prediabetes syndrome,916,SAMN13866285|pancreatic_A_cell|prediabetes_syndrome
+SAMN13866285,pancreatic stellate cell,prediabetes syndrome,146,SAMN13866285|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN13866285,pancreatic ductal cell,prediabetes syndrome,253,SAMN13866285|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN13866285,pancreatic acinar cell,prediabetes syndrome,253,SAMN13866285|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN13866285,endothelial cell,prediabetes syndrome,50,SAMN13866285|endothelial_cell|prediabetes_syndrome
+SAMN13866285,pancreatic D cell,prediabetes syndrome,93,SAMN13866285|pancreatic_D_cell|prediabetes_syndrome
+SAMN13866285,pancreatic PP cell,prediabetes syndrome,23,SAMN13866285|pancreatic_PP_cell|prediabetes_syndrome
+SAMN13901790,pancreatic D cell,type 2 diabetes mellitus,109,SAMN13901790|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN13901790,type B pancreatic cell,type 2 diabetes mellitus,2322,SAMN13901790|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN13901790,pancreatic ductal cell,type 2 diabetes mellitus,712,SAMN13901790|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN13901790,pancreatic stellate cell,type 2 diabetes mellitus,150,SAMN13901790|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN13901790,pancreatic A cell,type 2 diabetes mellitus,1217,SAMN13901790|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN13901790,pancreatic acinar cell,type 2 diabetes mellitus,221,SAMN13901790|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN13901790,endothelial cell,type 2 diabetes mellitus,45,SAMN13901790|endothelial_cell|type_2_diabetes_mellitus
+SAMN14255441,pancreatic A cell,prediabetes syndrome,1383,SAMN14255441|pancreatic_A_cell|prediabetes_syndrome
+SAMN14255441,type B pancreatic cell,prediabetes syndrome,2597,SAMN14255441|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN14255441,endothelial cell,prediabetes syndrome,188,SAMN14255441|endothelial_cell|prediabetes_syndrome
+SAMN14255441,leukocyte,prediabetes syndrome,65,SAMN14255441|leukocyte|prediabetes_syndrome
+SAMN14255441,pancreatic stellate cell,prediabetes syndrome,291,SAMN14255441|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN14255441,pancreatic D cell,prediabetes syndrome,141,SAMN14255441|pancreatic_D_cell|prediabetes_syndrome
+SAMN14255441,pancreatic PP cell,prediabetes syndrome,51,SAMN14255441|pancreatic_PP_cell|prediabetes_syndrome
+SAMN14255441,pancreatic acinar cell,prediabetes syndrome,56,SAMN14255441|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN14255441,pancreatic ductal cell,prediabetes syndrome,96,SAMN14255441|pancreatic_ductal_cell|prediabetes_syndrome
+HP-20152-01,pancreatic A cell,normal,1333,HP-20152-01|pancreatic_A_cell|normal
+HP-20152-01,pancreatic ductal cell,normal,340,HP-20152-01|pancreatic_ductal_cell|normal
+HP-20152-01,type B pancreatic cell,normal,2566,HP-20152-01|type_B_pancreatic_cell|normal
+HP-20152-01,pancreatic stellate cell,normal,317,HP-20152-01|pancreatic_stellate_cell|normal
+HP-20152-01,pancreatic D cell,normal,328,HP-20152-01|pancreatic_D_cell|normal
+HP-20152-01,pancreatic acinar cell,normal,79,HP-20152-01|pancreatic_acinar_cell|normal
+HP-20152-01,pancreatic PP cell,normal,147,HP-20152-01|pancreatic_PP_cell|normal
+HP-20152-01,endothelial cell,normal,104,HP-20152-01|endothelial_cell|normal
+HP-20152-01,leukocyte,normal,39,HP-20152-01|leukocyte|normal
+SAMN15337453,type B pancreatic cell,normal,2988,SAMN15337453|type_B_pancreatic_cell|normal
+SAMN15337453,endothelial cell,normal,150,SAMN15337453|endothelial_cell|normal
+SAMN15337453,pancreatic D cell,normal,171,SAMN15337453|pancreatic_D_cell|normal
+SAMN15337453,pancreatic ductal cell,normal,97,SAMN15337453|pancreatic_ductal_cell|normal
+SAMN15337453,pancreatic A cell,normal,698,SAMN15337453|pancreatic_A_cell|normal
+SAMN15337453,pancreatic acinar cell,normal,41,SAMN15337453|pancreatic_acinar_cell|normal
+SAMN15337453,pancreatic PP cell,normal,129,SAMN15337453|pancreatic_PP_cell|normal
+SAMN15337453,pancreatic stellate cell,normal,162,SAMN15337453|pancreatic_stellate_cell|normal
+SAMN16373925,type B pancreatic cell,prediabetes syndrome,953,SAMN16373925|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN16373925,pancreatic D cell,prediabetes syndrome,70,SAMN16373925|pancreatic_D_cell|prediabetes_syndrome
+SAMN16373925,pancreatic ductal cell,prediabetes syndrome,663,SAMN16373925|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN16373925,pancreatic A cell,prediabetes syndrome,586,SAMN16373925|pancreatic_A_cell|prediabetes_syndrome
+SAMN16373925,pancreatic acinar cell,prediabetes syndrome,261,SAMN16373925|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN16373925,endothelial cell,prediabetes syndrome,48,SAMN16373925|endothelial_cell|prediabetes_syndrome
+SAMN16373925,pancreatic PP cell,prediabetes syndrome,46,SAMN16373925|pancreatic_PP_cell|prediabetes_syndrome
+SAMN16373925,pancreatic stellate cell,prediabetes syndrome,73,SAMN16373925|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN16365027,type B pancreatic cell,type 2 diabetes mellitus,2422,SAMN16365027|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN16365027,pancreatic D cell,type 2 diabetes mellitus,232,SAMN16365027|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN16365027,pancreatic A cell,type 2 diabetes mellitus,1267,SAMN16365027|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN16365027,pancreatic ductal cell,type 2 diabetes mellitus,179,SAMN16365027|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN16365027,pancreatic stellate cell,type 2 diabetes mellitus,160,SAMN16365027|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN16365027,endothelial cell,type 2 diabetes mellitus,28,SAMN16365027|endothelial_cell|type_2_diabetes_mellitus
+SAMN16365027,pancreatic acinar cell,type 2 diabetes mellitus,171,SAMN16365027|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN16365027,pancreatic PP cell,type 2 diabetes mellitus,126,SAMN16365027|pancreatic_PP_cell|type_2_diabetes_mellitus
+SAMN16547514,pancreatic A cell,normal,661,SAMN16547514|pancreatic_A_cell|normal
+SAMN16547514,pancreatic PP cell,normal,246,SAMN16547514|pancreatic_PP_cell|normal
+SAMN16547514,pancreatic D cell,normal,395,SAMN16547514|pancreatic_D_cell|normal
+SAMN16547514,type B pancreatic cell,normal,2912,SAMN16547514|type_B_pancreatic_cell|normal
+SAMN16547514,pancreatic ductal cell,normal,186,SAMN16547514|pancreatic_ductal_cell|normal
+SAMN16547514,pancreatic stellate cell,normal,263,SAMN16547514|pancreatic_stellate_cell|normal
+SAMN16547514,pancreatic acinar cell,normal,173,SAMN16547514|pancreatic_acinar_cell|normal
+SAMN16547514,leukocyte,normal,27,SAMN16547514|leukocyte|normal
+SAMN16547514,endothelial cell,normal,100,SAMN16547514|endothelial_cell|normal
+SAMN17209843,pancreatic A cell,type 2 diabetes mellitus,3104,SAMN17209843|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN17209843,pancreatic ductal cell,type 2 diabetes mellitus,300,SAMN17209843|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN17209843,pancreatic PP cell,type 2 diabetes mellitus,69,SAMN17209843|pancreatic_PP_cell|type_2_diabetes_mellitus
+SAMN17209843,type B pancreatic cell,type 2 diabetes mellitus,1553,SAMN17209843|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN17209843,pancreatic D cell,type 2 diabetes mellitus,346,SAMN17209843|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN17209843,pancreatic acinar cell,type 2 diabetes mellitus,352,SAMN17209843|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN17209843,pancreatic stellate cell,type 2 diabetes mellitus,292,SAMN17209843|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN17209843,leukocyte,type 2 diabetes mellitus,26,SAMN17209843|leukocyte|type_2_diabetes_mellitus
+SAMN17209843,endothelial cell,type 2 diabetes mellitus,110,SAMN17209843|endothelial_cell|type_2_diabetes_mellitus
+SAMN17528599,pancreatic ductal cell,prediabetes syndrome,431,SAMN17528599|pancreatic_ductal_cell|prediabetes_syndrome
+SAMN17528599,pancreatic PP cell,prediabetes syndrome,200,SAMN17528599|pancreatic_PP_cell|prediabetes_syndrome
+SAMN17528599,pancreatic A cell,prediabetes syndrome,1124,SAMN17528599|pancreatic_A_cell|prediabetes_syndrome
+SAMN17528599,type B pancreatic cell,prediabetes syndrome,4092,SAMN17528599|type_B_pancreatic_cell|prediabetes_syndrome
+SAMN17528599,pancreatic D cell,prediabetes syndrome,377,SAMN17528599|pancreatic_D_cell|prediabetes_syndrome
+SAMN17528599,pancreatic stellate cell,prediabetes syndrome,170,SAMN17528599|pancreatic_stellate_cell|prediabetes_syndrome
+SAMN17528599,pancreatic acinar cell,prediabetes syndrome,131,SAMN17528599|pancreatic_acinar_cell|prediabetes_syndrome
+SAMN17831932,pancreatic A cell,type 2 diabetes mellitus,924,SAMN17831932|pancreatic_A_cell|type_2_diabetes_mellitus
+SAMN17831932,pancreatic acinar cell,type 2 diabetes mellitus,190,SAMN17831932|pancreatic_acinar_cell|type_2_diabetes_mellitus
+SAMN17831932,pancreatic PP cell,type 2 diabetes mellitus,157,SAMN17831932|pancreatic_PP_cell|type_2_diabetes_mellitus
+SAMN17831932,type B pancreatic cell,type 2 diabetes mellitus,1064,SAMN17831932|type_B_pancreatic_cell|type_2_diabetes_mellitus
+SAMN17831932,pancreatic ductal cell,type 2 diabetes mellitus,378,SAMN17831932|pancreatic_ductal_cell|type_2_diabetes_mellitus
+SAMN17831932,pancreatic D cell,type 2 diabetes mellitus,112,SAMN17831932|pancreatic_D_cell|type_2_diabetes_mellitus
+SAMN17831932,endothelial cell,type 2 diabetes mellitus,36,SAMN17831932|endothelial_cell|type_2_diabetes_mellitus
+SAMN17831932,pancreatic stellate cell,type 2 diabetes mellitus,189,SAMN17831932|pancreatic_stellate_cell|type_2_diabetes_mellitus
+SAMN17831932,leukocyte,type 2 diabetes mellitus,21,SAMN17831932|leukocyte|type_2_diabetes_mellitus
