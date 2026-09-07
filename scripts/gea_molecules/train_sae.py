@@ -1,8 +1,9 @@
 import argparse
 from gea.dataloader import EmbeddingDataset
+from gea_molecules.scaffold_split import scaffold_split
 from gea.gea import ShallowSAE, train_sae
 import torch
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 import numpy as np
 
 def main(args):
@@ -10,23 +11,12 @@ def main(args):
     torch.manual_seed(args.seed)
 
     emb_data = EmbeddingDataset(args.embeddings_path)
-    g = torch.Generator().manual_seed(args.seed)
-    train_pct, val_pct, test_pct = args.splits
-
-    if not np.isclose(sum(args.splits), 1.0):
-        raise ValueError(
-            f"Splits must sum to 1. Got {args.splits}"
-        )
-
     n = len(emb_data)
-    train_size = int(train_pct * n)
-    val_size = int(val_pct * n)
-    test_size = n - train_size - val_size
-    
-    train_data, val_data, test_data = random_split(
-        emb_data,
-        [train_size, val_size, test_size],
-        generator=g,
+
+    train_data, val_data, test_data = scaffold_split(
+        dataset = emb_data, 
+        splits=args.splits, 
+        seed=args.seed
     )
 
     torch.save(
@@ -42,6 +32,13 @@ def main(args):
         train_data,
         batch_size=args.batch_size,
         shuffle=True,
+        num_workers=args.num_workers
+    )
+
+    val_loader = DataLoader(
+        val_data,
+        batch_size=args.batch_size,
+        shuffle=False,
         num_workers=args.num_workers
     )
 
@@ -66,19 +63,14 @@ def main(args):
     train_sae(
         sae_model=sae_graph,
         train_loader=train_loader,
+        val_loader=val_loader,
         device=device,
         epochs=args.epochs,
         lr=args.lr,
         w_l2=args.weight_decay,
+        model_path=args.checkpoint_path
     )
 
-    torch.save(
-        {
-            "model_state_dict": sae_graph.state_dict(),
-            "config": vars(args),
-        },
-        args.checkpoint_path,
-    )
 
 if __name__ == "__main__":
 

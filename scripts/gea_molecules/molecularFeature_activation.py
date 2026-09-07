@@ -9,17 +9,9 @@ def main(args):
 
     emb_data = EmbeddingDataset(args.embeddings_path)
 
-    splits = torch.load(args.splits_path, weights_only=False)
+    splits = torch.load(args.splits_path)
 
     test_data = Subset(emb_data, splits["test"])
-    val_data = Subset(emb_data, splits["val"])
-
-    val_loader = DataLoader(
-        val_data,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers
-    )
 
     test_loader = DataLoader(
         test_data,
@@ -43,19 +35,6 @@ def main(args):
     )
     sae_graph = sae_graph.to(device)
 
-    best_features, concept_counts, frequency_stats, max_features = gea_annotation(
-        sae_model = sae_graph, 
-        data_loader = val_loader, 
-        thresholds = args.thresholds, 
-        top_k = args.top_k,
-        device = device
-    )
-
-    concept_feature_pairs = best_concept_features(
-        counts=concept_counts, 
-        best_features=best_features,
-        min_count=args.min_count
-    )
 
     test_results = concept_feature_test(
         sae_model = sae_graph, 

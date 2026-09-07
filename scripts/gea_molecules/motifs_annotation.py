@@ -13,8 +13,9 @@ def main(args):
 
     # Node embeddings
     node_obj = annotate_node_GroverEmbeds(
-        args.embeddings,
-        motif_dict=motif_dict
+        args.embeddings_path,
+        motif_dict=motif_dict,
+        embedding_key=args.embedding_key_node
     )
 
     np.savez_compressed(
@@ -28,8 +29,8 @@ def main(args):
 
     # Graph embeddings
     graph_obj = annotate_graph_GroverEmbeds(
-        args.embeddings,
-        motif_dict=motif_dict
+        args.embeddings_path,
+        embedding_key=args.embedding_key_graph
     )
 
     np.savez_compressed(
@@ -73,6 +74,20 @@ if __name__ == "__main__":
         type=str,
         default="graph_embeddings.npz",
         help="Output path for graph embeddings"
+    )
+
+    parser.add_argument(
+        "--embedding_key_node",
+        type=str,
+        default="atom_from_atom",
+        help="Key for node embeddings in the Grover embeddings dictionary"
+    )
+
+    parser.add_argument(
+        "--embedding_key_graph",
+        type=str,
+        default="graph_from_atom_from_atom",
+        help="Key for graph embeddings in the Grover embeddings dictionary"
     )
 
     args = parser.parse_args()
