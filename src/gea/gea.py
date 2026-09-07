@@ -1030,7 +1030,7 @@ class ShallowSAE(nn.Module):
             torch.sum(torch.abs(z), dim=1)
         )
 
-        return loss_recon + loss_sparsity
+        return loss_recon + loss_sparsity, loss_recon, loss_sparsity
 
     def normalize_weights(self):
         with torch.no_grad():
@@ -1038,19 +1038,33 @@ class ShallowSAE(nn.Module):
             self.W_dec.data = self.W_dec.data / (norms + 1e-12)
 
 
+# -------------------------------------------------------------------------
+# Training
+# -------------------------------------------------------------------------
+
 def train_sae(
     sae_model,
     train_loader,
+    val_loader,
     device,
     epochs=1000,
     lr=1e-3,
     w_l2=1e-4,
+    model_path="sae_model.pt",
+    loss_path="sae_training_loss.csv",
 ):
 
     sae_model.to(device)
     sae_model.train()
 
-    optimizer = optim.Adam(sae_model.parameters(), lr=lr, weight_decay=w_l2)
+    optimizer = optim.AdamW(
+        [
+            {"params": [sae_model.W_enc, sae_model.b_enc, sae_model.b_dec]},
+            {"params": [sae_model.W_dec], "weight_decay": 0.0},
+        ],
+        lr=lr,
+        weight_decay=w_l2,
+    )
 
     total_steps = len(train_loader) * epochs
 
@@ -1059,8 +1073,14 @@ def train_sae(
         desc="Training SAE model",
     )
 
-    for epoch in range(epochs):
+    epoch_losses = []
+    epoch_val_losses = []
+    epoch_val_losses_recon = []
+    epoch_val_losses_sparsity = []
+    best_val_loss = float("inf")
 
+    for epoch in range(epochs):
+        epoch_loss = 0.0
         for batch in train_loader:
             embeddings = batch['embedding'].to(device)
             optimizer.zero_grad()
@@ -1068,20 +1088,62 @@ def train_sae(
             z, pred_z_graph = sae_model(embeddings)
 
             # Calculate loss
-            loss = sae_model.loss(pred_z_graph, embeddings, z)
+            loss, loss_recon, loss_sparsity = sae_model.loss(pred_z_graph, embeddings, z)
 
             # Backpropagation and optimization step
             loss.backward()
             optimizer.step()
             sae_model.normalize_weights()  # normalize decoder weights to prevent collapse to zero and encourage diversity in learned features
 
+            epoch_loss += loss.item()
             # Update progress bar
             progress_bar.set_postfix(
                 total_loss=f"{loss.item():.4f}",
-                epoch=f"{epoch}/{epochs + 1}",
+                recon_loss=f"{loss_recon.item():.4f}",
+                sparsity_loss=f"{loss_sparsity.item():.4f}",
+                epoch=f"{epoch+1}/{epochs}",
             )
             progress_bar.update()
 
+        epoch_losses.append(epoch_loss / len(train_loader))
+
+        sae_model.eval()
+        epoch_val_loss = 0.0
+        epoch_val_loss_recon = 0.0
+        epoch_val_loss_sparsity = 0.0
+        for batch in val_loader:
+            embeddings = batch['embedding'].to(device)
+            with torch.no_grad():
+                z, pred_z_graph = sae_model(embeddings)
+                val_loss, val_loss_recon, val_loss_sparsity = sae_model.loss(pred_z_graph, embeddings, z)
+                epoch_val_loss += val_loss.item()
+                epoch_val_loss_recon += val_loss_recon.item()
+                epoch_val_loss_sparsity += val_loss_sparsity.item()
+
+        epoch_val_loss /= len(val_loader)
+        epoch_val_loss_recon /= len(val_loader)
+        epoch_val_loss_sparsity /= len(val_loader)
+
+        epoch_val_losses.append(epoch_val_loss)
+        epoch_val_losses_recon.append(epoch_val_loss_recon)
+        epoch_val_losses_sparsity.append(epoch_val_loss_sparsity)
+
+        if epoch_val_loss < best_val_loss:
+            best_val_loss = epoch_val_loss
+            best_epoch = epoch
+            torch.save(sae_model.state_dict(), model_path)
+
     progress_bar.close()
 
-# class GEA(nn.Module):
+    loss_df = pd.DataFrame({
+        "epoch": np.arange(1, epochs + 1),
+        "train_loss": epoch_losses,
+        "val_loss": epoch_val_losses,
+        "val_loss_recon": epoch_val_losses_recon,
+        "val_loss_sparsity": epoch_val_losses_sparsity
+    })
+
+    loss_df.to_csv(loss_path, index=False)
+
+    print(f"\nTraining losses saved to: {loss_path}")
+    print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")

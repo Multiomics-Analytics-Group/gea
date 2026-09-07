@@ -138,8 +138,8 @@ This dictionary can be expanded or modified to include additional molecular conc
 Given the embedding file and the motif dictionary, molecular embeddings can be annotated and prepared for SAE training using:
 
 ```bash
-python scripts/gea_molecules/annotate_embeddings.py \
-    --embeddings_path grover_embeddings.pt
+python scripts/gea_molecules/motifs_annotation.py \
+    --embeddings_path /home/mabarr/TCruzi_pipeline/grover_embeddings_sol.pt
 ```
 
 This script generates the `.npz` files containing embeddings, annotations, and additional metadata required for the GEA workflow.
@@ -147,7 +147,7 @@ This script generates the `.npz` files containing embeddings, annotations, and a
 To see all available command-line arguments, run:
 
 ```bash
-python scripts/gea_molecules/annotate_embeddings.py --help
+python scripts/gea_molecules/motifs_annotation.py --help
 ```
 
 Once the data has been prepared, the general GEA workflow can be applied independently to each generated embedding file.

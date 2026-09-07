@@ -1,15 +1,31 @@
 from gea.dataloader import EmbeddingDataset
-from gea.analysis import gea_annotation, best_concept_features, concept_feature_test
+from gea.analysis import gea_annotation, concept_feature_test, select_concept_features, calculate_quartile_thresholds, binarize_annotation
 from gea.gea import ShallowSAE
 import torch
 from torch.utils.data import DataLoader, Subset
 import argparse
+from gea_molecules.results import selected_feature_activation
 
 def main(args):
 
     emb_data = EmbeddingDataset(args.embeddings_path)
 
     splits = torch.load(args.splits_path, weights_only=False)
+    
+    train_indices = splits["train"]
+
+    if args.is_graph:
+        quartile_thresholds = calculate_quartile_thresholds(
+            emb_data,
+            train_indices
+        )
+
+        for idx in range(len(emb_data)):
+
+            emb_data.annotations[idx] = binarize_annotation(
+                emb_data.annotations[idx],
+                quartile_thresholds
+            )
 
     test_data = Subset(emb_data, splits["test"])
     val_data = Subset(emb_data, splits["val"])
@@ -28,7 +44,7 @@ def main(args):
         num_workers=args.num_workers
     )
 
-    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    device = args.device if torch.cuda.is_available() else "cpu"
 
     sae_graph = ShallowSAE(
         in_dim=args.d_z,
@@ -39,23 +55,25 @@ def main(args):
     checkpoint = torch.load(args.checkpoint_path)
 
     sae_graph.load_state_dict(
-        checkpoint["model_state_dict"]
+        checkpoint
     )
     sae_graph = sae_graph.to(device)
 
-    best_features, concept_counts, frequency_stats, max_features = gea_annotation(
+
+    f1_scores_concepts, concept_counts, frequency_stats, max_features = gea_annotation(
         sae_model = sae_graph, 
         data_loader = val_loader, 
         thresholds = args.thresholds, 
-        top_k = args.top_k,
         device = device
     )
 
-    concept_feature_pairs = best_concept_features(
+    concept_feature_pairs = select_concept_features(
         counts=concept_counts, 
-        best_features=best_features,
+        f1_scores=f1_scores_concepts,
+        f1_threshold=args.f1_threshold,
         min_count=args.min_count
     )
+
 
     test_results = concept_feature_test(
         sae_model = sae_graph, 
@@ -65,22 +83,25 @@ def main(args):
         device = device
     )
 
-    torch.save(
-        {
-            "best_features": best_features,
-            "concept_counts": concept_counts,
-            "frequency_stats": frequency_stats,
-            "max_features": max_features,
-            "test_results": test_results
-        },
-        args.results_path
-    )
+    # Extract activations for all features
+    
+    acts = selected_feature_activation(sae_graph, test_loader, max_features=max_features, feature=2789, device='cuda')
+
+    results = {"f1_scores_concepts": f1_scores_concepts, 
+               "concept_counts": concept_counts, 
+               "frequency_stats": frequency_stats, 
+               "max_features": max_features,
+               "concept_feature_pairs": concept_feature_pairs,
+               "test_results": test_results,
+               "W_dec": sae_graph.W_dec.detach().cpu().numpy()}
+
+    torch.save(results, args.results_path)
 
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        description="F1-scores computations for feature-concept pairs in the validation dataset."
+        description="GEA annotation pipeline."
     )
 
     parser.add_argument(
@@ -162,17 +183,23 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--top_k",
-        type=int,
-        default=5,
-        help="Number of top features to select during validation."
+        "--f1_threshold",
+        type=float,
+        default=0.5,
+        help="Threshold for selecting features based on F1-score."
     )
 
     parser.add_argument(
         "--results_path",
         type=str,
-        default="gea_annotation_results_test.pt",
+        default="gea_annotation_results.pt",
         help="Path to save metrics."
+    )
+
+    parser.add_argument(
+        "--is_graph",
+        action="store_true",
+        help="Annotate graph embeddings instead of node embeddings."
     )
 
     args = parser.parse_args()

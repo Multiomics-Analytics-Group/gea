@@ -80,3 +80,13 @@ docs/tutorial/data/disgenet/diseases/
 docs/tutorial/data/disgenet/string/
 docs/tutorial/data/disgenet/*.tsv
 docs/tutorial/data/disgenet/*.csv
+
+# Embeddings
+graph_embeddings.npz
+node_embeddings.npz
+
+# Figures results
+results/*
+
+# Molecules dictionary
+dict/*

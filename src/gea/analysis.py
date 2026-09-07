@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
-
+import umap
+import hdbscan
 
 # ── Activation Extraction ──────────────────────────────────────────────────────
 
@@ -171,6 +172,75 @@ def activations_preparation(sae_activations, feature_maxima, threshold = 0.5):
 
     return binary
 
+DESCRIPTOR_NAMES = [
+    "MW",
+    "LogP",
+    "TPSA",
+    "HBD",
+    "HBA",
+    "RotatableBonds",
+    "HeavyAtoms",
+    "Rings",
+    "AromaticRings",
+    "FractionCSP3",
+    "FormalCharge",
+    "MolarRefractivity",
+]
+
+def calculate_quartile_thresholds(dataset, train_indices):
+    """
+    Calculate Q1, Q2 and Q3 thresholds for each descriptor
+    using only the training set.
+    """
+
+    thresholds = {}
+
+    for descriptor in DESCRIPTOR_NAMES:
+
+        values = []
+
+        for idx in train_indices:
+            annotation = dataset.annotations[idx]
+            values.append(float(annotation[descriptor]))
+
+        values = np.asarray(values)
+
+        thresholds[descriptor] = np.percentile(
+            values,
+            [25, 50, 75]
+        )
+
+    return thresholds
+
+def binarize_annotation(annotation, thresholds):
+
+    # Keep all existing annotations
+    new_annotation = annotation.copy()
+
+    for descriptor in DESCRIPTOR_NAMES:
+
+        value = float(annotation[descriptor])
+
+        q1, q2, q3 = thresholds[descriptor]
+
+        if value <= q1:
+            quartile = 1
+        elif value <= q2:
+            quartile = 2
+        elif value <= q3:
+            quartile = 3
+        else:
+            quartile = 4
+
+        # Remove the original continuous descriptor
+        del new_annotation[descriptor]
+
+        # Add the four binary annotations
+        for q in range(1, 5):
+            new_annotation[f"{descriptor}_Q{q}"] = float(q == quartile)
+
+    return new_annotation
+
 def confusion_counts(binary_acts, labels):
     """
     binary_acts : (N, F) bool
@@ -258,7 +328,9 @@ def calculate_f1(metrics, concept_name, threshold):
 
 def gea_annotation(sae_model, data_loader, 
                    thresholds = [0, 0.15, 0.5, 0.6, 0.8], 
-                   top_k = 5, device = 'cuda'):
+                   device = 'cuda'):
+
+    # In this version, GEA annotation does not select features based on F1-score
 
     sae_model.to(device)
     sae_model.eval()
@@ -289,48 +361,45 @@ def gea_annotation(sae_model, data_loader,
     }
         
     with torch.no_grad():
+
         for batch in data_loader:
 
             embeddings = batch["embedding"].to(device)
             concepts = batch['annotation']
+
             z_sae, _ = sae_model(embeddings)
 
             for concept_name, labels in concepts.items():
                 labels = labels.to(device)
                 concept_counts[concept_name] += labels.sum().item()
                 for th in thresholds:
+
                     binary = activations_preparation(sae_activations=z_sae,
                                                      feature_maxima=max_features,
                                                      threshold=th)
-                    tp, fp, tn, fn = confusion_counts(binary_acts=binary, labels = labels)
+                    
+                    tp, fp, tn, fn = confusion_counts(
+                        binary_acts=binary, 
+                        labels = labels
+                    )
+
                     metrics[concept_name][th]["tp"] += tp.cpu()
                     metrics[concept_name][th]["fp"] += fp.cpu()
                     metrics[concept_name][th]["tn"] += tn.cpu()
                     metrics[concept_name][th]["fn"] += fn.cpu()
 
-    best_features = {
+    f1_scores_concepts = {
         concept_name: {}
         for concept_name in concept_names
     }
 
-    for concept_name, labels in concepts.items():
+    for concept_name in concept_names:
         for th in thresholds:
             f1scores = calculate_f1(metrics=metrics, concept_name=concept_name, threshold=th)
-            #best_f1, best_feature = torch.max(f1scores, dim=0)
-            top_f1, top_features = torch.topk(f1scores, k=top_k)
-            #best_features[concept_name][th] = {
-                #"f1": top_f1.tolist(),
-                #"feature": top_features.tolist()
-            #}
-            best_features[concept_name][th] = [
-                {
-                    "feature": feature.item(),
-                    "f1": f1.item()
-                }
-                for feature, f1 in zip(top_features, top_f1)
-            ]
+            f1_scores_concepts[concept_name][th] = f1scores
                       
-    return best_features, concept_counts, frequency_stats, max_features
+    return f1_scores_concepts, concept_counts, frequency_stats, max_features
+
 
 def best_concept_features(counts, best_features, min_count=50):
 
@@ -339,30 +408,109 @@ def best_concept_features(counts, best_features, min_count=50):
         if value > min_count
     ]
 
-    concept_feature_pairs = {}
+    best_feature_per_concept = {}
+    integr_results = {}
+    general_stats = {}
 
     for concept in valid_concepts:
-
-        feature_dict = {}
-
+        features_concept = []
         for th, feature_list in best_features[concept].items():
-
-            for feature_info in feature_list:
+            for i, feature_info in enumerate(feature_list):
 
                 feature = feature_info["feature"]
                 f1 = feature_info["f1"]
 
-                # Keep the best threshold for each feature
-                if feature not in feature_dict or f1 > feature_dict[feature]["f1"]:
-                    feature_dict[feature] = {
+                if i==0:
+                    features_concept.append(feature)
+
+                # Keep the best feature and threshold for each concept
+                if concept not in best_feature_per_concept or f1 > best_feature_per_concept[concept]["f1"]:
+                    best_feature_per_concept[concept] = {
+                        "feature": feature,
                         "f1": f1,
-                        "threshold": th
+                        "threshold": th,
+                        "validation_count": counts[concept]
                     }
 
-        for feature, info in feature_dict.items():
-            concept_feature_pairs[(concept, feature)] = info
+        general_stats[concept] = {
+            "unique_features": len(set(features_concept)),
+            "best_feature_count": features_concept.count(best_feature_per_concept[concept]["feature"]),
+        }
 
-    return concept_feature_pairs
+    integr_results = {"best_feature_per_concept": best_feature_per_concept, 
+                      "general_stats": general_stats}
+
+    return integr_results
+
+def select_concept_features(
+    counts,
+    f1_scores,
+    f1_threshold=0.5,
+    min_count=50
+):
+
+    valid_concepts = [
+        concept
+        for concept, count in counts.items()
+        if count > min_count
+    ]
+
+    features_per_concept = {}
+
+    for concept in valid_concepts:
+
+        n_thresholds = len(f1_scores[concept])
+
+        # feature -> information accumulated across thresholds
+        feature_results = {}
+
+        for th, scores in f1_scores[concept].items():
+
+            for feature, f1 in enumerate(scores):
+
+                f1 = f1.item()
+
+                # Only consider features passing the F1 threshold
+                if f1 <= f1_threshold:
+                    continue
+
+                if feature not in feature_results:
+
+                    feature_results[feature] = {
+                        "feature": feature,
+                        "f1": f1,
+                        "threshold": th,
+                        "validation_count": counts[concept],
+                        "threshold_count": 1,
+                    }
+
+                else:
+
+                    # Feature passed the threshold again
+                    feature_results[feature]["threshold_count"] += 1
+
+                    # Keep the best F1 / threshold
+                    if f1 > feature_results[feature]["f1"]:
+                        feature_results[feature]["f1"] = f1
+                        feature_results[feature]["threshold"] = th
+
+        # Add proportion of thresholds
+        for feature_info in feature_results.values():
+            feature_info["threshold_proportion"] = (
+                feature_info["threshold_count"] / n_thresholds
+            )
+
+        # Sort by F1
+        selected = sorted(
+            feature_results.values(),
+            key=lambda x: x["f1"],
+            reverse=True
+        )
+
+        features_per_concept[concept] = selected
+
+    return features_per_concept
+
 
 def concept_feature_test(sae_model, data_loader, max_features, 
                          concept_feature_pairs, device = 'cuda'):
@@ -370,11 +518,15 @@ def concept_feature_test(sae_model, data_loader, max_features,
     sae_model.to(device)
     sae_model.eval()
 
-    for (concept, feature), info in concept_feature_pairs.items():
-        info["tp"] = 0
-        info["fp"] = 0
-        info["tn"] = 0
-        info["fn"] = 0
+    for concept, list in concept_feature_pairs.items():
+        for info in list:
+            info["test"] = {
+                "test_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "tn": 0,
+                "fn": 0
+            }
         
     with torch.no_grad():
         for batch in data_loader:
@@ -383,25 +535,95 @@ def concept_feature_test(sae_model, data_loader, max_features,
             annotation = batch['annotation']
             z_sae, _ = sae_model(embeddings)
 
-            for (concept, feature), info in concept_feature_pairs.items():
+            for concept, list in concept_feature_pairs.items():
+                for info in list:
+                    feature = info["feature"]
 
-                binary = activations_preparation(
-                    sae_activations=z_sae[:,feature],
-                    feature_maxima=max_features[feature],
-                    threshold=info["threshold"]
-                )
+                    binary = activations_preparation(
+                        sae_activations=z_sae[:,feature],
+                        feature_maxima=max_features[feature],
+                        threshold=info["threshold"]
+                    )
                 
-                labels = annotation[concept].to(device)
+                    labels = annotation[concept].to(device)
+                    info["test"]["test_count"] += labels.sum().item()
 
-                tp, fp, tn, fn = confusion_counts(binary_acts=binary, labels = labels)
+                    tp, fp, tn, fn = confusion_counts(binary_acts=binary, labels = labels)
 
-                info["tp"] += tp.cpu()
-                info["fp"] += fp.cpu()
-                info["tn"] += tn.cpu()
-                info["fn"] += fn.cpu()
+                    info["test"]["tp"] += tp.item()
+                    info["test"]["fp"] += fp.item()
+                    info["test"]["tn"] += tn.item()
+                    info["test"]["fn"] += fn.item()
 
+    for concept, list in concept_feature_pairs.items():
+        for info in list:
+            f1 = 2 * info["test"]["tp"] / (2 * info["test"]["tp"] + info["test"]["fp"] + info["test"]["fn"] + 1e-8)
+            info["test"]["f1"] = f1
                     
-    return concept_feature_pairs
+    return concept_feature_pairs 
+
+
+def umap_hdbscan_decoder(W_dec, umap_components=20, umap_neighbors=15, 
+                         umap_min_dist=0.1, hdbscan_min_cluster_size=5, 
+                         hdbscan_min_samples=3):
+    """
+    UMAP + HDBSCAN clustering of SAE decoder vectors.
+
+    Parameters
+    ----------
+    W_dec : torch.Tensor or np.ndarray
+        Shape (n_features, embedding_dim).
+
+    Returns
+    -------
+    embedding : np.ndarray
+        Shape (n_features, 2), UMAP coordinates.
+
+    cluster_labels : np.ndarray
+        Shape (n_features,).
+        HDBSCAN cluster ID for each feature.
+        -1 means noise/unclustered.
+    """
+
+    if isinstance(W_dec, torch.Tensor):
+        W_dec = W_dec.detach().cpu().numpy()
+
+    W_dec = np.asarray(W_dec, dtype=np.float32)
+
+    print("W_dec shape:", W_dec.shape)
+
+    reducer = umap.UMAP(
+        n_components=umap_components,
+        metric="cosine",
+        n_neighbors=umap_neighbors,
+        min_dist=umap_min_dist,
+        random_state=42,
+    )
+
+    embedding = reducer.fit_transform(
+        W_dec
+    )
+
+    print("UMAP shape:", embedding.shape)
+
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=hdbscan_min_cluster_size,
+        min_samples=hdbscan_min_samples,
+    )
+
+    cluster_labels = clusterer.fit_predict(
+        embedding
+    )
+
+    unique, counts = np.unique(
+        cluster_labels,
+        return_counts=True
+    )
+
+    print("\nClusters:")
+
+    return embedding, cluster_labels
+
 
 def extract_edge_activations(sae_edge, gnn_model, data_loader, device):
     """
@@ -1342,6 +1564,7 @@ def plot_feature_activation_heatmap(graph_acts_df, features, label_col="label",
     g.ax_col_dendrogram.legend(handles, unique_labels, loc="center", ncol=len(unique_labels),
                                title="Phenotype", framealpha=0.7)
     return g.fig, g.ax_heatmap
+
 
 
 # ── SAE activations from exported embeddings ───────────────────────────────────
