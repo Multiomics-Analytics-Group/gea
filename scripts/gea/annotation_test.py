@@ -39,7 +39,7 @@ def main(args):
     checkpoint = torch.load(args.checkpoint_path)
 
     sae_graph.load_state_dict(
-        checkpoint["model_state_dict"]
+        checkpoint
     )
     sae_graph = sae_graph.to(device)
 
