@@ -86,26 +86,26 @@ To see all available command-line arguments, run:
 python scripts/gea/train_sae.py --help
 ```
 
-The second and third stages of the GEA workflow—feature annotation and evaluation—can be performed using:
+The second and third stages of the GEA workflow, feature annotation and evaluation, can be performed using:
 
 ```bash
-python scripts/gea/annotation_test.py
+python scripts/gea/gea_pipeline.py --embeddings_path node_embeddings.npz
 ```
 
-This script requires the dataset splits generated during SAE training. The splits are saved by `train_sae.py` and are loaded from the same path by default. If a different location was used during training, the corresponding path can be provided using the appropriate command-line argument.
+This script requires the dataset splits generated during SAE training. The splits are saved by `train_sae.py` and are loaded from the same path by default. If a different location was used during training, the corresponding path can be provided using `--splits_path`. In the molecular use-case for graph embeddings, please use the `--is_molecular_graph` argument. 
 
 By default, the results are saved to:
 
 ```text
-gea_annotation_results_test.pt
+gea_annotation_results.pt
 ```
 
 A different output location can be specified using the `--results_path` argument.
 
-If the default arguments were used during SAE training, the annotation and evaluation script can be run directly as shown above. To view all available command-line arguments, run:
+To view all available command-line arguments, run:
 
 ```bash
-python scripts/gea/annotation_test.py --help
+python scripts/gea/gea_pipeline.py --help
 ```
 
 ### :microscope: GEA applied to molecules
@@ -118,6 +118,10 @@ The embedding file is a Python dictionary where each key corresponds to a molecu
 * **`atom_from_bond`**
 * **`bond_from_atom`**
 * **`bond_from_bond`**
+* **`graph_from_atom_from_atom`**
+* **`graph_from_atom_from_bond`**
+* **`prediction`**
+* **`target`**
 
 These embeddings can represent different molecular entities and can subsequently be converted into the standardized `.npz` format required by the general GEA workflow.
 
@@ -139,10 +143,12 @@ Given the embedding file and the motif dictionary, molecular embeddings can be a
 
 ```bash
 python scripts/gea_molecules/motifs_annotation.py \
-    --embeddings_path /home/mabarr/TCruzi_pipeline/grover_embeddings_sol.pt
+    --embeddings_path /home/mabarr/TCruzi_pipeline/grover_embeddings_solubility.pt 
 ```
 
 This script generates the `.npz` files containing embeddings, annotations, and additional metadata required for the GEA workflow.
+
+By default, `motifs_annotation` takes `atom_from_atom` and `graph_from_atom_from_atom` embeddings for nodes and graphs, respectively, but it can be specified otherwise using arguments `embedding_key_node` and `embedding_key_graph`. 
 
 To see all available command-line arguments, run:
 
