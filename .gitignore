@@ -66,6 +66,7 @@ cover/
 
 # Files generated while running GEA
 **.txt
+!requirements.txt
 **.fa
 **.gz
 **.json
