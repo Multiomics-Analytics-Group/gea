@@ -76,10 +76,10 @@ docs/tutorial/**/*.png
 
 # Disease Graph Atlas (docs/tutorial/demo-disgenet.ipynb): bulk reference downloads and generated
 # artefacts. All of it is rebuilt by the notebook — the DISEASES channel file alone is ~620 MB.
-docs/tutorial/data/disgenet/diseases/
-docs/tutorial/data/disgenet/string/
-docs/tutorial/data/disgenet/*.tsv
-docs/tutorial/data/disgenet/*.csv
+docs/tutorial/data/diseases/
+docs/tutorial/data/diseases/string/
+docs/tutorial/data/diseases/*.tsv
+docs/tutorial/data/diseases/*.csv
 
 # Embeddings
 graph_embeddings.npz
