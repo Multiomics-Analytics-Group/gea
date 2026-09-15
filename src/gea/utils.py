@@ -129,6 +129,51 @@ def load_esm_embeddings(
     return embeddings
 
 
+def load_esm_protein_embeddings(esm_file: str, protein_ids: list) -> torch.Tensor:
+    """
+    Load pre-computed ESM-2 embeddings from a saved file, one embedding per protein.
+
+    Expected file format (produced by scripts/get_esm_protein_embeddings.py):
+        { protein_id: tensor([hidden_dim]) }
+
+    Unlike load_esm_embeddings, there is no isoform aggregation: a protein id already
+    names one specific sequence, so this is a direct lookup. Proteins absent from the
+    file receive a random Gaussian embedding so that downstream processing is never
+    blocked by missing entries.
+
+    Parameters
+    ----------
+    esm_file : str
+        Path to the .pt file saved by get_esm_protein_embeddings.py.
+    protein_ids : list of str
+        Ordered list of Ensembl/STRING protein IDs (ENSP...) to look up.
+
+    Returns
+    -------
+    torch.Tensor, shape [len(protein_ids), hidden_dim]
+    """
+    nested = torch.load(esm_file, weights_only=False)
+
+    hidden_dim = next(iter(nested.values())).shape[0]
+
+    embeddings = torch.zeros(len(protein_ids), hidden_dim)
+    found = 0
+
+    for i, protein_id in enumerate(tqdm(protein_ids, desc="Loading ESM-2 embeddings")):
+        if protein_id in nested:
+            embeddings[i] = nested[protein_id]
+            found += 1
+        else:
+            embeddings[i] = torch.randn(hidden_dim)
+
+    print(f"Found ESM-2 embeddings for {found}/{len(protein_ids)} proteins.")
+
+    norms = embeddings.norm(p=2, dim=1, keepdim=True).clamp(min=1e-12)
+    embeddings = embeddings / norms
+
+    return embeddings
+
+
 def compress_embeddings_pca(
     embeddings: torch.Tensor,
     n_components: int = 256,
