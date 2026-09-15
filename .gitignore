@@ -81,6 +81,10 @@ docs/tutorial/data/diseases/string/
 docs/tutorial/data/diseases/*.tsv
 docs/tutorial/data/diseases/*.csv
 
+# Mask-the-interactome (docs/tutorial/mask-the-interactome.ipynb): context graphs, ESM top-up,
+# checkpoint and the three embedding levels. All of it is rebuilt by the notebook.
+docs/tutorial/data/mask-the-interactome/
+
 # Embeddings
 graph_embeddings.npz
 node_embeddings.npz
