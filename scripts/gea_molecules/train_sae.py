@@ -68,7 +68,8 @@ def main(args):
         epochs=args.epochs,
         lr=args.lr,
         w_l2=args.weight_decay,
-        model_path=args.checkpoint_path
+        model_path=args.checkpoint_path,
+        loss_path = args.learning_curves_path
     )
 
 
@@ -174,6 +175,12 @@ if __name__ == "__main__":
         "--weight_decay",
         type=float,
         default=1e-4,
+    )
+
+    parser.add_argument(
+        "--learning_curves_path",
+        type = str,
+        default = "sae_training_loss.csv"
     )
 
     args = parser.parse_args()

@@ -103,6 +103,102 @@ def split_solubility_loaders(
 
     return high_loader, low_loader
 
+def split_solubility_loaders_binary(test_loader):
+    dataset = test_loader.dataset
+
+    ones_indices = []
+    zeros_indices = []
+
+    # Store target for each molecule
+    molecule_targets = {}
+
+    for idx in range(len(dataset)):
+
+        sample = dataset[idx]
+
+        smiles = sample["entity"]
+        target = sample["target"]
+
+        # Convert target to a Python float
+        if torch.is_tensor(target):
+            target = target.item()
+        else:
+            target = float(target)
+
+        # Check consistency if molecule appears multiple times
+        if smiles in molecule_targets:
+            previous_target = molecule_targets[smiles]
+
+            if not np.isclose(target, previous_target):
+                raise ValueError(
+                    f"Molecule {smiles} has inconsistent targets: "
+                    f"{previous_target} vs {target}"
+                )
+        else:
+            molecule_targets[smiles] = target
+
+    # Assign every sample belonging to a molecule
+    # to the same split
+    for idx in range(len(dataset)):
+
+        smiles = dataset[idx]["entity"]
+        target = molecule_targets[smiles]
+
+        if np.isclose(target, 1.0):
+            ones_indices.append(idx)
+
+        elif np.isclose(target, 0.0):
+            zeros_indices.append(idx)
+
+        else:
+            raise ValueError(
+                f"Unexpected target {target} for molecule {smiles}. "
+                "Expected 0.0 or 1.0."
+            )
+
+    ones_dataset = Subset(dataset, ones_indices)
+    zeros_dataset = Subset(dataset, zeros_indices)
+
+    # Create loaders
+    ones_loader = DataLoader(
+        ones_dataset,
+        batch_size=test_loader.batch_size,
+        shuffle=False,
+        num_workers=test_loader.num_workers,
+    )
+
+    zeros_loader = DataLoader(
+        zeros_dataset,
+        batch_size=test_loader.batch_size,
+        shuffle=False,
+        num_workers=test_loader.num_workers,
+    )
+
+    # Diagnostics
+    ones_smiles = {
+        dataset[idx]["entity"]
+        for idx in ones_indices
+    }
+
+    zeros_smiles = {
+        dataset[idx]["entity"]
+        for idx in zeros_indices
+    }
+
+    print("Binary solubility split")
+    print("-----------------------")
+    print(f"Class 1 molecules: {len(ones_smiles)}")
+    print(f"Class 0 molecules: {len(zeros_smiles)}")
+
+    print("\nSample counts")
+    print(f"Class 1 samples: {len(ones_indices)}")
+    print(f"Class 0 samples: {len(zeros_indices)}")
+
+    print("\nMolecule overlap:")
+    print("Class 1 ∩ Class 0:", ones_smiles & zeros_smiles)
+
+    return ones_loader, zeros_loader
+
 def extract_activations(
         sae_model, 
         data_loader,
@@ -123,8 +219,6 @@ def extract_activations(
 
             normalized_sae_activations = z_sae / max_features
             feature_act = normalized_sae_activations[:, selected_features]
-
-    
 
 
 
@@ -171,13 +265,15 @@ def selected_feature_activation(
 
     return feature_activation
 
+
 def all_features_activation(test_results, sae_model, data_loader, 
-                            max_features, activation_threshold = 0.1, device = 'cuda'):
+                            max_features, device = 'cuda'):
 
     features_activations = {}
     for concept, info_list in test_results.items():
         for info in info_list:
             feature = info['feature']
+            activation_threshold = info['threshold']
             smiles_dict = selected_feature_activation(
                 sae_model = sae_model, 
                 data_loader = data_loader, 

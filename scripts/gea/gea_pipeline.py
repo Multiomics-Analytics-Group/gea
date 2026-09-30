@@ -165,7 +165,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--min_count",
         type=int,
-        default=50,
+        default=5,
         help="Minimum number of counts per concept."
     )
 
