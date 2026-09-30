@@ -163,6 +163,176 @@ motifs["degree 2"] = "[D2]"
 motifs["degree 3"] = "[D3]"
 motifs["degree 4"] = "[D4]"
 
+# ============================================================
+# Solubility model-specific atom environments
+# Based on the atom typing rules from the solubility model
+# ============================================================
+
+# ------------------------------------------------------------
+# Aliphatic carbon environments
+# ------------------------------------------------------------
+
+# sp3 carbon with different numbers of attached hydrogens
+motifs["sp3 CH4"] = "[CX4;H4]"
+motifs["sp3 CH3"] = "[CX4;H3]"
+motifs["sp3 CH2"] = "[CX4;H2]"
+motifs["sp3 CH"] = "[CX4;H1]"
+motifs["sp3 C"] = "[CX4;H0]"
+
+# sp3 carbon attached to another carbon
+motifs["sp3 CH3 attached to carbon"] = "[CX4;H3][#6]"
+motifs["sp3 CH2 attached to carbon"] = "[CX4;H2][#6]"
+motifs["sp3 CH attached to two carbons"] = "[CX4;H]([#6])[#6]"
+motifs["sp3 C attached to three carbons"] = "[CX4;H0]([#6])([#6])[#6]"
+motifs["sp3 C attached to four carbons"] = "[CX4;H0]([#6])([#6])([#6])[#6]"
+
+# More general tertiary/quaternary carbon environments
+motifs["tertiary sp3 carbon"] = "[CX4;H1;D3]"
+motifs["quaternary sp3 carbon"] = "[CX4;H0;D4]"
+
+# ------------------------------------------------------------
+# sp3 carbon attached to heteroatoms
+# ------------------------------------------------------------
+
+motifs["sp3 CH3 attached to O or N"] = \
+    "[CX4;H3][CX3,c,F,Cl,Br,I]=[#8,#7]"
+
+motifs["sp3 CH3 attached to heteroatom"] = \
+    "[CX4;H3][CX4,c,F,Cl,Br,I]~[#8,#7]"
+
+motifs["sp3 CH2 attached to carbonyl"] = \
+    "[CX4;H2][#6]=[#8,#7]"
+
+motifs["sp3 CH2 attached to heteroatom"] = \
+    "[CX4;H2][CX4,c,F,Cl,Br,I]~[#8,#7]"
+
+motifs["sp3 CH2 attached to OH or NH"] = \
+    "[CX4;H2]-[OH,NH2,NH]"
+
+motifs["sp3 CH attached to OH or NH"] = \
+    "[CX4;H1]-[OH,NH2,NH]"
+
+# ------------------------------------------------------------
+# Alkyl branching
+# ------------------------------------------------------------
+
+motifs["isopropyl-like carbon"] = "C([#6])([#6])"
+motifs["tert-butyl-like carbon"] = "C([#6])([#6])([#6])"
+
+# ------------------------------------------------------------
+# Unsaturated carbon environments
+# ------------------------------------------------------------
+
+motifs["alkene CH2"] = "[C;H2]=[*]"
+motifs["alkene CH"] = "[C;H1]=[*]"
+motifs["alkene C"] = "[C;H0]=[*]"
+
+motifs["terminal alkene"] = "[CH2]=[C]"
+motifs["substituted alkene"] = "[CH]=[C]"
+
+motifs["carbonyl CH"] = "[C;H1]=O"
+motifs["carbonyl C"] = "[C;H0]=O"
+
+# Carbonyl carbon in a ring
+motifs["cyclic carbonyl"] = "[C;r]=O"
+
+# ------------------------------------------------------------
+# Aromatic carbon environments
+# ------------------------------------------------------------
+
+motifs["aromatic CH"] = "[c;H1]"
+motifs["aromatic substituted C"] = "[c;H0]"
+
+motifs["aromatic CH in six-membered ring"] = "[c;H1;r6]"
+
+# Aromatic CH connected to aromatic carbons
+motifs["aromatic CH connected to aromatic carbons"] = \
+    "[c;H1](~c)~c"
+
+# Aromatic CH connected to heteroaromatic atom
+motifs["aromatic CH adjacent to heteroatom"] = \
+    "[c;H1](~c)~[a;!c]"
+
+motifs["aromatic CH between heteroatoms"] = \
+    "[c;H1](~[a;!c])~[a;!c]"
+
+# Aromatic substituted carbon connected to heteroatoms
+motifs["aromatic C adjacent to heteroatoms"] = \
+    "[c;H0](~[a;!c])~[a;!c]"
+
+motifs["aromatic C attached to heteroatom and carbon"] = \
+    "[c;H0](~[!#6])(~c)~[a;!c]"
+
+# Aromatic substituted carbon in an all-carbon aromatic environment
+motifs["aromatic substituted C in carbon ring"] = \
+    "[c;H0](~c)(~c)~c"
+
+# Aromatic substituted carbon attached to aliphatic carbon/halogen
+motifs["aromatic C attached to aliphatic or halogen"] = \
+    "[c;H0](~[CX4,F,Cl,Br,I])(~c)~c"
+
+# Aromatic carbon attached to non-carbon/non-halogen atom
+motifs["aromatic C attached to heteroatom"] = \
+    "[c;H0](~[!#6;!F;!Cl])(~c)~c"
+
+# ------------------------------------------------------------
+# Oxygen environments
+# ------------------------------------------------------------
+
+motifs["hydroxyl O"] = "[#8;H1]"
+motifs["hydroxyl O attached to carbon"] = "[#8;H1]C"
+
+motifs["non-hydroxyl O"] = "[#8;H0]"
+motifs["O attached to carbon and oxygen"] = "[#8;H0]CO"
+
+motifs["dialkyl O"] = "[#8;H0]([#6X4])[#6X4]"
+
+motifs["carbonyl O"] = "[#8]=C"
+motifs["carbonyl O attached to carbonyl carbon"] = "[#8]=C([#6])[#6]"
+
+# Aromatic oxygen
+motifs["aromatic oxygen"] = "[o]"
+
+# ------------------------------------------------------------
+# Phosphorus / sulfur oxygen environments
+# ------------------------------------------------------------
+
+motifs["O single-bonded to sulfur"] = "[OX1]~S"
+motifs["O single-bonded to phosphorus"] = "[OX1]~P"
+
+motifs["O bonded to phosphorus"] = "[OX2]([*])[P]"
+
+# ------------------------------------------------------------
+# Nitrogen environments
+# ------------------------------------------------------------
+
+motifs["primary amine N"] = "[N;H2]"
+motifs["primary amine N attached to carbon"] = "[N;H2][C]"
+
+motifs["secondary amine N"] = "[N;H1]"
+motifs["secondary amine N attached to one carbon"] = \
+    "[N;H1]([#6X4])"
+
+motifs["secondary amine N attached to two carbons"] = \
+    "[N;H1]([#6X4])[#6X4]"
+
+motifs["tertiary amine N"] = "[N;H0]"
+motifs["tertiary amine N attached to carbon"] = \
+    "[N;H0]([#6X4])"
+
+motifs["tertiary amine N attached to two carbons"] = \
+    "[N;H0]([#6X4])([#6X4])"
+
+motifs["tertiary amine N attached to three carbons"] = \
+    "[N;H0]([#6X4])([#6X4])[#6X4]"
+
+motifs["aromatic N-H"] = "[N;H1;r]"
+motifs["aromatic N"] = "[N;H0;r]"
+
+# Aromatic nitrogen
+motifs["aromatic n"] = "[n]"
+motifs["aromatic n-n"] = "[n]~[n]"
+
 
 
 with open('dict/motif_dictionary.pkl', 'wb') as f:

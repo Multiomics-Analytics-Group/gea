@@ -29,111 +29,11 @@ def get_scaffold(smiles):
         return None
 
 
-def scaffold_split(dataset, splits, seed=42):
-
-    train_pct, val_pct, test_pct = splits
-
-    if not np.isclose(sum(splits), 1.0):
-        raise ValueError(
-            f"Splits must sum to 1. Got {splits}"
-        )
-
-    rng = np.random.default_rng(seed)
-
-    # Entity associated with each embedding
-    entities = np.asarray(dataset.entities)
-
-    # Unique molecules
-    unique_entities = np.unique(entities)
-
-    # Group molecules by scaffold
-    scaffold_groups = {}
-
-    for smi in unique_entities:
-
-        scaffold = get_scaffold(smi)
-
-        if scaffold is None:
-            scaffold = f"INVALID_{smi}"
-
-        scaffold_groups.setdefault(scaffold, []).append(smi)
-
-    # Shuffle scaffolds
-    scaffolds = list(scaffold_groups.keys())
-    rng.shuffle(scaffolds)
-
-    # Split scaffolds
-    n_scaffolds = len(scaffolds)
-
-    train_end = int(train_pct * n_scaffolds)
-    val_end = int((train_pct + val_pct) * n_scaffolds)
-
-    train_scaffolds = scaffolds[:train_end]
-    val_scaffolds = scaffolds[train_end:val_end]
-    test_scaffolds = scaffolds[val_end:]
-
-    # Convert scaffold assignments to molecule assignments
-    train_entities = {
-        smi
-        for scaffold in train_scaffolds
-        for smi in scaffold_groups[scaffold]
-    }
-
-    val_entities = {
-        smi
-        for scaffold in val_scaffolds
-        for smi in scaffold_groups[scaffold]
-    }
-
-    test_entities = {
-        smi
-        for scaffold in test_scaffolds
-        for smi in scaffold_groups[scaffold]
-    }
-
-    # Map molecule assignments back to embedding rows
-    train_idx = np.where(
-        np.isin(entities, list(train_entities))
-    )[0]
-
-    val_idx = np.where(
-        np.isin(entities, list(val_entities))
-    )[0]
-
-    test_idx = np.where(
-        np.isin(entities, list(test_entities))
-    )[0]
-
-    # Checks
-    assert len(set(train_entities) & set(val_entities)) == 0
-    assert len(set(train_entities) & set(test_entities)) == 0
-    assert len(set(val_entities) & set(test_entities)) == 0
-
-    print("\nCounts:")
-    print("Total embeddings:", len(entities))
-    print("Train embeddings:", len(train_idx))
-    print("Val embeddings:", len(val_idx))
-    print("Test embeddings:", len(test_idx))
-
-    print("\nUnique molecules:")
-    print("Train:", len(train_entities))
-    print("Val:", len(val_entities))
-    print("Test:", len(test_entities))
-
-    print("\nUnique scaffolds:")
-    print("Train:", len(train_scaffolds))
-    print("Val:", len(val_scaffolds))
-    print("Test:", len(test_scaffolds))
-
-    return (
-        Subset(dataset, train_idx),
-        Subset(dataset, val_idx),
-        Subset(dataset, test_idx),
-    )
-
-
-def scaffold_split(dataset, splits=(0.8, 0.1, 0.1), seed=42):
-
+def scaffold_split(
+    dataset,
+    splits=(0.8, 0.1, 0.1),
+    seed=42
+):
     train_pct, val_pct, test_pct = splits
 
     if not np.isclose(sum(splits), 1.0):
@@ -149,93 +49,81 @@ def scaffold_split(dataset, splits=(0.8, 0.1, 0.1), seed=42):
     print("Total embeddings:", len(entities))
     print("Unique molecules:", len(unique_smiles))
 
+    # ---------------------------------------------------------
+    # Group molecules by scaffold
+    # ---------------------------------------------------------
     scaffold_groups = {}
 
     for smi in unique_smiles:
 
         scaffold = get_scaffold(smi)
 
-        # Keep invalid molecules separate
         if scaffold is None:
             scaffold = f"INVALID_{smi}"
 
         scaffold_groups.setdefault(scaffold, []).append(smi)
 
+    # ---------------------------------------------------------
+    # Target number of molecules
+    # ---------------------------------------------------------
+    total_molecules = len(unique_smiles)
+
+    train_size = train_pct * total_molecules
+    val_size = val_pct * total_molecules
+
+    # ---------------------------------------------------------
+    # Shuffle scaffolds with seed
+    # ---------------------------------------------------------
     scaffolds = list(scaffold_groups.keys())
     rng.shuffle(scaffolds)
 
- 
-    # assign scaffolds based on the number of unique molecules they contain.
-    total_molecules = len(unique_smiles)
+    # Then sort by scaffold size, keeping the random order
+    # for scaffolds with equal size.
+    scaffolds = sorted(
+        scaffolds,
+        key=lambda scaffold: len(scaffold_groups[scaffold]),
+        reverse=True
+    )
 
-    target_train = train_pct * total_molecules
-    target_val = val_pct * total_molecules
-    target_test = test_pct * total_molecules
-
+    # ---------------------------------------------------------
+    # Assign scaffolds GROVER-style
+    # ---------------------------------------------------------
     train_scaffolds = []
     val_scaffolds = []
     test_scaffolds = []
 
-    train_count = 0
-    val_count = 0
-    test_count = 0
+    train_smiles = []
+    val_smiles = []
+    test_smiles = []
 
-    # Sort scaffolds by size, largest first.
-    # This makes the greedy assignment more stable.
-    scaffolds = sorted(
-        scaffolds,
-        key=lambda s: len(scaffold_groups[s]),
-        reverse=True
-    )
-
-    # Assign each scaffold to the split that is currently
-    # furthest below its target.
     for scaffold in scaffolds:
 
-        scaffold_size = len(scaffold_groups[scaffold])
+        molecules = scaffold_groups[scaffold]
+        scaffold_size = len(molecules)
 
-        train_fraction = train_count / target_train if target_train > 0 else np.inf
-        val_fraction = val_count / target_val if target_val > 0 else np.inf
-        test_fraction = test_count / target_test if target_test > 0 else np.inf
+        if len(train_smiles) + scaffold_size <= train_size:
 
-        fractions = {
-            "train": train_fraction,
-            "val": val_fraction,
-            "test": test_fraction
-        }
-
-        split = min(fractions, key=fractions.get)
-
-        if split == "train":
+            train_smiles.extend(molecules)
             train_scaffolds.append(scaffold)
-            train_count += scaffold_size
 
-        elif split == "val":
+        elif len(val_smiles) + scaffold_size <= val_size:
+
+            val_smiles.extend(molecules)
             val_scaffolds.append(scaffold)
-            val_count += scaffold_size
 
         else:
+
+            test_smiles.extend(molecules)
             test_scaffolds.append(scaffold)
-            test_count += scaffold_size
 
-    train_smiles = {
-        smi
-        for scaffold in train_scaffolds
-        for smi in scaffold_groups[scaffold]
-    }
+    # Convert to sets
+    train_smiles = set(train_smiles)
+    val_smiles = set(val_smiles)
+    test_smiles = set(test_smiles)
 
-    val_smiles = {
-        smi
-        for scaffold in val_scaffolds
-        for smi in scaffold_groups[scaffold]
-    }
-
-    test_smiles = {
-        smi
-        for scaffold in test_scaffolds
-        for smi in scaffold_groups[scaffold]
-    }
-
+    # ---------------------------------------------------------
+    # Map molecules to embedding rows
+    # ---------------------------------------------------------
     train_idx = np.where(
         np.isin(entities, list(train_smiles))
     )[0]
@@ -248,37 +136,24 @@ def scaffold_split(dataset, splits=(0.8, 0.1, 0.1), seed=42):
         np.isin(entities, list(test_smiles))
     )[0]
 
+    # ---------------------------------------------------------
+    # Checks
+    # ---------------------------------------------------------
+    assert train_smiles.isdisjoint(val_smiles)
+    assert train_smiles.isdisjoint(test_smiles)
+    assert val_smiles.isdisjoint(test_smiles)
 
-    assert len(train_smiles & val_smiles) == 0
-    assert len(train_smiles & test_smiles) == 0
-    assert len(val_smiles & test_smiles) == 0
+    train_scaf = set(train_scaffolds)
+    val_scaf = set(val_scaffolds)
+    test_scaf = set(test_scaffolds)
 
+    assert train_scaf.isdisjoint(val_scaf)
+    assert train_scaf.isdisjoint(test_scaf)
+    assert val_scaf.isdisjoint(test_scaf)
 
-    train_scaf = {
-        get_scaffold(smi)
-        for smi in train_smiles
-    }
-
-    val_scaf = {
-        get_scaffold(smi)
-        for smi in val_smiles
-    }
-
-    test_scaf = {
-        get_scaffold(smi)
-        for smi in test_smiles
-    }
-
-    # Remove None if any invalid SMILES were encountered
-    train_scaf.discard(None)
-    val_scaf.discard(None)
-    test_scaf.discard(None)
-
-    assert len(train_scaf & val_scaf) == 0
-    assert len(train_scaf & test_scaf) == 0
-    assert len(val_scaf & test_scaf) == 0
-
-
+    # ---------------------------------------------------------
+    # Print statistics
+    # ---------------------------------------------------------
     print("\nMolecule counts:")
     print(f"Total: {len(unique_smiles)}")
     print(
@@ -318,7 +193,6 @@ def scaffold_split(dataset, splits=(0.8, 0.1, 0.1), seed=42):
     print("Train ∩ Val:", train_scaf & val_scaf)
     print("Train ∩ Test:", train_scaf & test_scaf)
     print("Val ∩ Test:", val_scaf & test_scaf)
-
 
     return (
         Subset(dataset, train_idx),
