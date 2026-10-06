@@ -30,6 +30,40 @@ An overview of the workflow can be found below:
 
 ## :gear: Installation 
 
+The project environment can be recreated using the provided Conda environment file.
+
+Make sure [Conda](https://docs.conda.io/projects/conda/en/latest/) is installed, then run:
+
+```bash
+conda env create -f environment.yml
+```
+
+This will create the environment with the required dependencies.
+
+Activate the environment using:
+
+```bash
+conda activate gea
+```
+
+You can check that the environment is correctly installed with:
+
+```bash
+conda env list
+```
+
+The `gea` environment should be listed as the active environment.
+
+If the `environment.yml` file is updated, update the existing environment with:
+
+```bash
+conda env update -f environment.yml --prune
+```
+
+The `--prune` option removes packages that are no longer specified in the environment file.
+
+____
+
 > [!TIP]
 > It is recommended to install GEA inside a virtual environment to manage depenendencies and avoid conflicts with existing packages. You can use the virtual environment manager of your choice, such as `poetry`, `conda`, or `pipenv`.
 
