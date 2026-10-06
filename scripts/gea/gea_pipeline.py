@@ -1,5 +1,8 @@
 from gea.dataloader import EmbeddingDataset
-from gea.analysis import gea_annotation, concept_feature_test, select_concept_features, calculate_quartile_thresholds, binarize_annotation
+from gea.analysis import (
+    gea_annotation, concept_feature_test, select_concept_features, 
+    calculate_quartile_thresholds, binarize_all_annotations, calculate_motif_count_categories
+)
 from gea.gea import ShallowSAE
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -14,16 +17,31 @@ def main(args):
     train_indices = splits["train"]
 
     if args.is_molecular_graph:
+
         quartile_thresholds = calculate_quartile_thresholds(
             emb_data,
             train_indices
         )
 
+        count_motifs = [
+            motif for motif in emb_data.annotations[0]
+            if motif not in emb_data.molecular_descriptors
+        ]
+
+        motif_classes = calculate_motif_count_categories(
+            emb_data,
+            train_indices,
+            count_motifs,
+            min_category_count=args.min_category_count
+        )
+
         for idx in range(len(emb_data)):
 
-            emb_data.annotations[idx] = binarize_annotation(
-                emb_data.annotations[idx],
-                quartile_thresholds
+            emb_data.annotations[idx] = binarize_all_annotations(
+                emb_data,
+                idx,
+                quartile_thresholds,
+                motif_classes,
             )
 
     test_data = Subset(emb_data, splits["test"])
@@ -111,6 +129,12 @@ if __name__ == "__main__":
         type=str,
         default='splits.pt',
         help="Path with saved splits."
+    )
+
+    parser.add_argument(
+        "--min_category_count",
+        type=int,
+        default=5,
     )
 
     parser.add_argument(

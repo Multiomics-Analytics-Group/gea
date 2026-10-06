@@ -247,6 +247,7 @@ class EmbeddingDataset(Dataset):
         self.entities = data["entities"]
         self.predictions = data["prediction"]
         self.targets = data["target"]
+        self.molecular_descriptors = data.get("molecular_descriptors", [])
 
     def __len__(self):
         return len(self.embeddings)

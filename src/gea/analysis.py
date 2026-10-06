@@ -8,6 +8,7 @@ from scipy import stats
 from statsmodels.stats.multitest import multipletests
 import umap
 import hdbscan
+from collections import Counter
 
 # ── Activation Extraction ──────────────────────────────────────────────────────
 
@@ -172,21 +173,6 @@ def activations_preparation(sae_activations, feature_maxima, threshold = 0.5):
 
     return binary
 
-DESCRIPTOR_NAMES = [
-    "MW",
-    "LogP",
-    "TPSA",
-    "HBD",
-    "HBA",
-    "RotatableBonds",
-    "HeavyAtoms",
-    "Rings",
-    "AromaticRings",
-    "FractionCSP3",
-    "FormalCharge",
-    "MolarRefractivity",
-]
-
 def calculate_quartile_thresholds(dataset, train_indices):
     """
     Calculate Q1, Q2 and Q3 thresholds for each descriptor
@@ -194,8 +180,9 @@ def calculate_quartile_thresholds(dataset, train_indices):
     """
 
     thresholds = {}
+    descriptor_names = list(dataset.molecular_descriptors)
 
-    for descriptor in DESCRIPTOR_NAMES:
+    for descriptor in descriptor_names:
 
         values = []
 
@@ -212,12 +199,20 @@ def calculate_quartile_thresholds(dataset, train_indices):
 
     return thresholds
 
-def binarize_annotation(annotation, thresholds):
+def binarize_properties_annotation(dataset, idx, thresholds):
 
-    # Keep all existing annotations
-    new_annotation = annotation.copy()
+    """ 
+    Binarize molecular descriptors using training-derived quartile thresholds. 
+    
+    Returns only binary descriptor annotations. 
+    """
 
-    for descriptor in DESCRIPTOR_NAMES:
+    annotation = dataset.annotations[idx]
+    binary_annotation = {}
+
+    descriptor_names = list(dataset.molecular_descriptors)
+
+    for descriptor in descriptor_names:
 
         value = float(annotation[descriptor])
 
@@ -232,14 +227,145 @@ def binarize_annotation(annotation, thresholds):
         else:
             quartile = 4
 
-        # Remove the original continuous descriptor
-        del new_annotation[descriptor]
-
         # Add the four binary annotations
         for q in range(1, 5):
-            new_annotation[f"{descriptor}_Q{q}"] = float(q == quartile)
+            binary_annotation[f"{descriptor}_Q{q}"] = float(q == quartile)
 
-    return new_annotation
+    return binary_annotation
+
+def calculate_motif_count_categories(
+    emb_data,
+    train_indices,
+    motif_names,
+    min_category_count=5,
+):
+
+    motif_categories = {}
+
+    for motif in motif_names:
+
+        count_frequency = Counter()
+
+        for idx in train_indices:
+            count = emb_data.annotations[idx][motif]
+            count_frequency[count] += 1
+
+        positive_counts = [
+            count
+            for count in count_frequency
+            if count > 0
+        ]
+
+        if not positive_counts:
+            motif_categories[motif] = []
+            continue
+
+        max_count = max(positive_counts)
+
+        categories = []
+        rare_start = None
+
+        for count in range(1, max_count + 1):
+
+            frequency = count_frequency[count]
+
+            if frequency >= min_category_count:
+
+                # Close previous rare range
+                if rare_start is not None:
+
+                    if rare_start == count - 1:
+                        categories.append(rare_start)
+                    else:
+                        categories.append(
+                            f"{rare_start}-{count - 1}"
+                        )
+
+                    rare_start = None
+
+                categories.append(count)
+
+            else:
+
+                if rare_start is None:
+                    rare_start = count
+
+        # Handle the final category
+        if rare_start is not None:
+
+            # Final range is open-ended
+            categories.append(f">={rare_start}")
+
+        else:
+
+            # Maximum count was frequent.
+            # Replace its exact category with an open-ended one.
+            categories[-1] = f">={max_count}"
+
+        motif_categories[motif] = categories
+
+    return motif_categories
+
+def binarize_motif_counts(
+    dataset,
+    idx,
+    motif_categories,
+):
+
+    """ 
+    Binarize motif counts using training-derived categories. 
+    
+    Returns only binary motif annotations. 
+    Returns binary motif annotations for both:
+    - motif count categories
+    - motif presence/absence
+    """
+    
+    binary_annotation = {}
+
+    for motif, categories in motif_categories.items():
+
+        count = dataset.annotations[idx][motif]
+
+        # General motif presence/absence
+        binary_annotation[f"{motif}_presence"] = int(count > 0)
+
+        for category in categories:
+
+            if isinstance(category, int):
+                # Exact count
+                value = int(count == category)
+
+            elif category.startswith(">="):
+                # Open-ended range
+                minimum = int(category[2:])
+                value = int(count >= minimum)
+
+            else:
+                # Bounded range, e.g. "5-7"
+                lower, upper = map(int, category.split("-"))
+                value = int(lower <= count <= upper)
+
+            binary_annotation[f"{motif}_{category}"] = value
+
+    return binary_annotation
+
+def binarize_all_annotations(dataset, idx, quartile_thresholds, motif_categories): 
+
+    """ 
+    Binarize molecular descriptors and motif counts, and combine the resulting binary annotations. 
+    
+    """ 
+
+    binary_properties = binarize_properties_annotation(
+        dataset, idx, quartile_thresholds
+    )
+
+    binary_motifs = binarize_motif_counts(
+        dataset, idx, motif_categories
+    )
+    
+    return {**binary_properties, **binary_motifs}
 
 def confusion_counts(binary_acts, labels):
     """

@@ -84,26 +84,31 @@ pip install -e .
 
 GEA's workflow consists of three stages:
 
-1. Train a Sparse Autoencoder (SAE) on a training set of embedding vectors (e.g., node-, edge-, or graph-level embeddings).
-2. Annotate the learned SAE features using a validation set and the corresponding concept annotations.
-3. Evaluate the learned features on an independent test set.
+1. **Train a Sparse Autoencoder (SAE)** on a training set of embedding vectors (e.g., node-, edge-, or graph-level embeddings).
+2. **Annotate the learned SAE features** using a validation set and the corresponding concept annotations.
+3. **Evaluate the learned features** on an independent test set.
 
 Annotations provide a way to associate SAE features with domain-specific concepts. The type of concepts used for annotation depends on the application domain (see *GEA applied to molecules* for an example based on molecular motifs).
 
-The training script expects an `.npz` file containing, at a minimum, the following entries:
+The SAE training script expects an `.npz` file containing the following entries:
 
 * **`embeddings`**: a NumPy array of shape `(N, D)`, where `N` is the number of embedding vectors and `D` is the embedding dimension.
-* **`annotations`**: a NumPy object array of length `N`. Each element is a dictionary mapping concept names to binary labels indicating whether the corresponding concept is present in the associated embedding.
+* **`annotations`**: a NumPy object array of length `N`. Each element is a dictionary mapping concept names to labels associated with the corresponding embedding.
+* **`entities`**: an identifier associated with each embedding (e.g., a molecule identifier or SMILES string).
+* **`prediction`**: the model prediction associated with each embedding.
+* **`target`**: the ground-truth label associated with each embedding.
 
-The *i*-th embedding in `embeddings` must correspond to the *i*-th annotation dictionary in `annotations`.
+All entries must have the same number of samples, and the *i*-th element element of each entry must correspond to the same sample. For example:
 
-Optionally, the `.npz` file may also contain additional metadata, such as:
+`embeddings[i]`, `annotations[i]`, `entities[i]`, `prediction[i]` and `target[i]` all describe the same sample. 
 
-* **`entities`**: identifier associated with each embedding (e.g., a molecule identifier or SMILES string).
-* **`prediction`**: model prediction associated with each embedding.
-* **`target`**: ground-truth label associated with each embedding.
+The SAE training script supports both graph-level and node-level embeddings through the `--level` argument.
 
-These additional fields are preserved by the dataset loader and can be used in downstream analyses, but they are **not required** for training the SAE.
+For **graph-level embeddings**, samples are randomly divided into training, validation, and test sets according to the proportions specified by `--splits`.
+
+For **node-level embeddings**, the split is performed at the entity level. All embeddings associated with the same `entity` are assigned to the same split, preventing embeddings from the same graph from occurring in different splits.
+
+By default, the data are divided into 80% training, 10% validation, and 10% test sets. The random seed can be controlled using `--seed`.
 
 To train an SAE, run:
 
@@ -111,7 +116,8 @@ To train an SAE, run:
 python scripts/gea/train_sae.py \
     --embeddings_path node_embeddings.npz \
     --d_z 1200 \
-    --epochs 50
+    --epochs 50 \
+    --level node
 ```
 
 To see all available command-line arguments, run:
@@ -123,10 +129,13 @@ python scripts/gea/train_sae.py --help
 The second and third stages of the GEA workflow, feature annotation and evaluation, can be performed using:
 
 ```bash
-python scripts/gea/gea_pipeline.py --embeddings_path node_embeddings.npz
+python scripts/gea/gea_pipeline.py \
+    --embeddings_path node_embeddings.npz
 ```
 
-This script requires the dataset splits generated during SAE training. The splits are saved by `train_sae.py` and are loaded from the same path by default. If a different location was used during training, the corresponding path can be provided using `--splits_path`. In the molecular use-case for graph embeddings, please use the `--is_molecular_graph` argument. 
+This script requires the dataset splits generated during SAE training. The splits are saved by `train_sae.py` and are loaded from the same path by default. If a different location was used during training, it can be specified using `--splits_path`. 
+
+For the molecular use case with graph embeddings, use the `--is_molecular_graph` argument.
 
 By default, the results are saved to:
 
@@ -136,7 +145,7 @@ gea_annotation_results.pt
 
 A different output location can be specified using the `--results_path` argument.
 
-To view all available command-line arguments, run:
+To see all available command-line arguments, run:
 
 ```bash
 python scripts/gea/gea_pipeline.py --help
@@ -146,7 +155,7 @@ python scripts/gea/gea_pipeline.py --help
 
 GEA has been applied to embeddings obtained using a [fine-tuned version of GROVER](https://github.com/m-baralt/grover) trained to predict solubility from molecular structures.
 
-The embedding file is a Python dictionary where each key corresponds to a molecule represented as a SMILES string. Each value is a dictionary containing four types of embeddings:
+The embedding file is a Python dictionary in which each key corresponds to a molecule represented as a SMILES string. Each value is a dictionary containing the following embeddings and metadata:
 
 * **`atom_from_atom`**
 * **`atom_from_bond`**
@@ -157,7 +166,7 @@ The embedding file is a Python dictionary where each key corresponds to a molecu
 * **`prediction`**
 * **`target`**
 
-These embeddings can represent different molecular entities and can subsequently be converted into the standardized `.npz` format required by the general GEA workflow.
+The embeddings represent different molecular entities and can subsequently be converted into the standardized `.npz` format required by the general GEA workflow.
 
 Once the embeddings have been obtained, a molecular motif dictionary can be created by running:
 
@@ -177,12 +186,12 @@ Given the embedding file and the motif dictionary, molecular embeddings can be a
 
 ```bash
 python scripts/gea_molecules/motifs_annotation.py \
-    --embeddings_path /home/mabarr/TCruzi_pipeline/grover_embeddings_solubility.pt 
+    --embeddings_path grover_embeddings_solubility.pt
 ```
 
 This script generates the `.npz` files containing embeddings, annotations, and additional metadata required for the GEA workflow.
 
-By default, `motifs_annotation` takes `atom_from_atom` and `graph_from_atom_from_atom` embeddings for nodes and graphs, respectively, but it can be specified otherwise using arguments `embedding_key_node` and `embedding_key_graph`. 
+By default, motifs_annotation uses `atom_from_atom` embeddings for nodes and `graph_from_atom_from_atom` embeddings for graphs. These can be changed using the `--embedding_key_node` and `--embedding_key_graph` arguments.
 
 To see all available command-line arguments, run:
 
@@ -190,7 +199,16 @@ To see all available command-line arguments, run:
 python scripts/gea_molecules/motifs_annotation.py --help
 ```
 
-Once the data has been prepared, the general GEA workflow can be applied independently to each generated embedding file.
+Once the data have been prepared, the SAE can be trained using the molecular-specific training script. Molecules are split using a scaffold-based splitting approach to ensure that molecules with similar structural scaffolds are not distributed across the training, validation, and test sets.
+
+```bash
+python scripts/gea_molecules/train_sae.py \
+    --embeddings_path node_embeddings.npz \
+    --d_z 1200 \
+    --epochs 50
+```
+
+The annotation and evaluation stages can then be performed using `gea_pipeline` as described above.
 
 ## Documentation
 
