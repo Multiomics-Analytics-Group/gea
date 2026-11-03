@@ -9,7 +9,10 @@ def random_split_dataset(dataset, splits, seed, level):
     For node-level data, samples belonging to the same entity/graph are
     kept in the same split.
     """
+
+    
     train_frac, val_frac, test_frac = splits
+    print(f"Data is randomly split into train ({train_frac}), validation ({val_frac}) and test ({test_frac})")
 
     if not np.isclose(sum(splits), 1.0):
         raise ValueError("Split fractions must sum to 1.")
@@ -43,6 +46,10 @@ def random_split_dataset(dataset, splits, seed, level):
         test_entities = set(
             unique_entities[n_train + n_val:]
         )
+
+        assert train_entities.isdisjoint(val_entities)
+        assert train_entities.isdisjoint(test_entities)
+        assert val_entities.isdisjoint(test_entities)
 
         train_indices = np.array([
             i for i, entity in enumerate(entities)
