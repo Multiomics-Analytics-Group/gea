@@ -198,7 +198,7 @@ def main(args):
     results = {"f1_scores_concepts": f1_scores_concepts, 
                "numeric_correlations": numeric_correlations,
                "concept_counts": concept_counts, 
-               "frequency_stats": frequency_stats_train, 
+               "frequency_stats_train": frequency_stats_train, 
                "frequency_stats_val": frequency_stats_val,
                "frequency_stats_test": frequency_stats_test,
                "max_features_train": max_features_train,
