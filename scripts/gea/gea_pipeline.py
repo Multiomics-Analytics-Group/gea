@@ -1,14 +1,27 @@
 from gea.dataloader import EmbeddingDataset
 from gea.analysis import (
     gea_annotation, concept_feature_test, select_concept_features, 
-    calculate_quartile_thresholds, binarize_all_annotations, calculate_motif_count_categories
+    calculate_quartile_thresholds, binarize_all_annotations, calculate_count_categories,
+    detect_numeric_annotation_types, select_numeric_features, compute_feature_maxima,
+    add_class_specific_annotations
 )
 from gea.gea import ShallowSAE
 import torch
 from torch.utils.data import DataLoader, Subset
 import argparse
+import json
 
 def main(args):
+
+    print("Loading embeddings from:", args.embeddings_path, "Initializing dataset...")
+
+    numeric_variables = []
+    numeric_correlations = {}
+    numeric_feature_pairs = {}
+
+    continuous_variables = []
+    count_variables = []
+    binary_variables = []
 
     emb_data = EmbeddingDataset(args.embeddings_path)
 
@@ -16,22 +29,31 @@ def main(args):
     
     train_indices = splits["train"]
 
-    if args.is_molecular_graph:
+    args.class_names = {
+        int(label): name
+        for label, name in args.class_names.items()
+    }
+
+    if args.is_numeric:
+
+        print("Preparing numeric annotations...")
+
+        continuous_variables, count_variables, binary_variables = (
+            detect_numeric_annotation_types(emb_data)
+        )
+
+        numeric_variables = continuous_variables + count_variables
 
         quartile_thresholds = calculate_quartile_thresholds(
             emb_data,
-            train_indices
+            train_indices,
+            continuous_variables,
         )
 
-        count_motifs = [
-            motif for motif in emb_data.annotations[0]
-            if motif not in emb_data.molecular_descriptors
-        ]
-
-        motif_classes = calculate_motif_count_categories(
+        count_categories = calculate_count_categories(
             emb_data,
             train_indices,
-            count_motifs,
+            count_variables,
             min_category_count=args.min_category_count
         )
 
@@ -41,11 +63,54 @@ def main(args):
                 emb_data,
                 idx,
                 quartile_thresholds,
-                motif_classes,
+                count_categories,
+                binary_variables,
             )
 
+    else:
+        print("Using binary annotations...")
+        binary_variables = list(emb_data.annotations[0].keys())
+
+    print("Adding class-specific annotations...")
+    targets = emb_data.targets
+
+    # Detect types again using the binarised annotations
+    continuous_variables, count_variables, binary_variables = (
+        detect_numeric_annotation_types(emb_data)
+    )
+
+    print("Number of continuous variables:", len(continuous_variables))
+    print("Number of binary variables:", len(binary_variables))
+    print("Number of count variables:", len(count_variables))
+
+    emb_data.annotations = add_class_specific_annotations(
+        annotations=emb_data.annotations,
+        targets=targets,
+        continuous_variables=continuous_variables,
+        count_variables=count_variables,
+        binary_variables=binary_variables,
+        class_names = args.class_names,
+    )
+
+    if args.is_numeric:
+        numeric_variables += [
+            f"{name}_{class_name}"
+            for name in continuous_variables
+            for class_name in args.class_names.values()
+        ]
+
+    train_data = Subset(emb_data, splits["train"])
     test_data = Subset(emb_data, splits["test"])
     val_data = Subset(emb_data, splits["val"])
+
+    print("Preparing data loaders and model...")
+
+    train_loader = DataLoader(
+        train_data,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+    )
 
     val_loader = DataLoader(
         val_data,
@@ -75,15 +140,31 @@ def main(args):
         checkpoint
     )
     sae_graph = sae_graph.to(device)
+    sae_graph.eval()
 
+    print("Computing feature maxima from training data...")
 
-    f1_scores_concepts, concept_counts, frequency_stats, max_features = gea_annotation(
-        sae_model = sae_graph, 
-        data_loader = val_loader, 
-        thresholds = args.thresholds, 
-        device = device
+    (
+        max_features_train,
+        frequency_stats_train,
+        mean_active_activation_train,
+    ) = compute_feature_maxima(
+        sae_model=sae_graph,
+        data_loader=train_loader,
+        device=device,
     )
 
+    print("Running GEA annotation on validation data...")
+    f1_scores_concepts, concept_counts, frequency_stats_val, _, mean_active_activation_val, numeric_correlations = gea_annotation(
+        sae_model = sae_graph, 
+        data_loader = val_loader, 
+        max_features=max_features_train,
+        thresholds = args.thresholds, 
+        device = device,
+        numeric_variables=numeric_variables if args.is_numeric else None,
+    )
+    print("GEA annotation completed.")
+    print("Selecting concept features...")
     concept_feature_pairs = select_concept_features(
         counts=concept_counts, 
         f1_scores=f1_scores_concepts,
@@ -91,23 +172,47 @@ def main(args):
         min_count=args.min_count
     )
 
+    if args.is_numeric:
+        print("Selecting numeric features...")
+        numeric_feature_pairs = select_numeric_features(
+            numeric_correlations=numeric_correlations,
+            correlation_threshold=args.correlation_threshold,
+        )
 
-    test_results = concept_feature_test(
-        sae_model = sae_graph, 
-        data_loader = test_loader, 
-        max_features = max_features, 
-        concept_feature_pairs = concept_feature_pairs, 
-        device = device
+    print("Testing annotations...")
+    test_results, numeric_feature_pairs_test = concept_feature_test(
+        sae_model=sae_graph,
+        data_loader=test_loader,
+        max_features=max_features_train,
+        concept_feature_pairs=concept_feature_pairs,
+        numeric_feature_pairs=numeric_feature_pairs,
+        numeric_variables=numeric_variables,
+        device=device,
     )
 
+    print("Computing test-set activation statistics...")
+    max_features_test, frequency_stats_test, mean_active_activation_test = compute_feature_maxima(sae_model = sae_graph, 
+                                                                                                  data_loader = test_loader,
+                                                                                                  device = device)
+
     results = {"f1_scores_concepts": f1_scores_concepts, 
+               "numeric_correlations": numeric_correlations,
                "concept_counts": concept_counts, 
-               "frequency_stats": frequency_stats, 
-               "max_features": max_features,
+               "frequency_stats": frequency_stats_train, 
+               "frequency_stats_val": frequency_stats_val,
+               "frequency_stats_test": frequency_stats_test,
+               "max_features_train": max_features_train,
+               "max_features_test": max_features_test,
+               "mean_active_activation_train": mean_active_activation_train,
+               "mean_active_activation_val": mean_active_activation_val,
+               "mean_active_activation_test": mean_active_activation_test,
                "concept_feature_pairs": concept_feature_pairs,
-               "test_results": test_results,
+               "numeric_feature_pairs": numeric_feature_pairs,
+               "concept_feature_pairs_test": test_results,
+               "numeric_feature_pairs_test": numeric_feature_pairs_test,
                "W_dec": sae_graph.W_dec.detach().cpu().numpy()}
 
+    print("Saving results in:", args.results_path)
     torch.save(results, args.results_path)
 
 
@@ -209,6 +314,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--correlation_threshold",
+        type=float,
+        default=0.5,
+        help="Minimum absolute correlation for selecting numeric features.",
+    )
+
+    parser.add_argument(
         "--results_path",
         type=str,
         default="gea_annotation_results.pt",
@@ -216,9 +328,19 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--is_molecular_graph",
+        "--is_numeric",
         action="store_true",
-        help="Annotate molecular graph embeddings instead of node embeddings."
+        help="Boolean flag indicating whether there are numeric annotations to binarise.",
+    )
+
+    parser.add_argument(
+        "--class_names",
+        type=json.loads,
+        default={0: "insoluble", 1: "soluble"},
+        help=(
+            "JSON mapping of class labels to names, "
+            'e.g. \'{"0": "insoluble", "1": "soluble"}\'.'
+        ),
     )
 
     args = parser.parse_args()
