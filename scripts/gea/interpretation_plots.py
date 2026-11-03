@@ -163,6 +163,11 @@ def main(args):
         min_numeric_test=args.min_numeric_test,
     )
 
+    torch.save(
+        feature_annotations,
+        os.path.join(args.output_dir, "feature_annotations.pt"),
+    )
+
     # Plot categorical annotations
     plot_top_feature_annotations(
         feature_annotations,
