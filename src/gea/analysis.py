@@ -9,6 +9,7 @@ from statsmodels.stats.multitest import multipletests
 import umap
 import hdbscan
 from collections import Counter
+from scipy.stats import spearmanr
 
 # ── Activation Extraction ──────────────────────────────────────────────────────
 
@@ -146,24 +147,28 @@ def compute_feature_maxima(sae_model, data_loader, device):
     
     max_per_feat = torch.zeros(sae_model.latent_dim, device=device)
     activation_count = torch.zeros(sae_model.latent_dim, device=device)
+    activation_sum = torch.zeros(sae_model.latent_dim, device=device)
 
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch in data_loader:
-
             embeddings = batch["embedding"].to(device)
-
             z_sae, _ = sae_model(embeddings)
 
-            batch_max = z_sae.max(dim=0).values
+            max_per_feat = torch.maximum(
+                max_per_feat, z_sae.max(dim=0).values
+            )
+            active = z_sae > 0
+            activation_count += active.sum(dim=0)
+            activation_sum += z_sae.sum(dim=0)
 
-            max_per_feat = torch.maximum(max_per_feat, batch_max)
-            activation_count += (z_sae > 0).sum(dim=0)
+    n_samples = len(data_loader.dataset)
+    frequency = activation_count / n_samples
+    mean_active_activation = activation_sum / activation_count.clamp(min=1)
 
     # Avoid division by zero later
-    max_per_feat.clamp_(min=1e-8)
-    frequency = activation_count / len(data_loader.dataset)
+    max_per_feat = max_per_feat.clamp(min=1e-8)
 
-    return max_per_feat, frequency
+    return max_per_feat, frequency, mean_active_activation
 
 
 def activations_preparation(sae_activations, feature_maxima, threshold = 0.5):
@@ -173,50 +178,65 @@ def activations_preparation(sae_activations, feature_maxima, threshold = 0.5):
 
     return binary
 
-def calculate_quartile_thresholds(dataset, train_indices):
-    """
-    Calculate Q1, Q2 and Q3 thresholds for each descriptor
-    using only the training set.
-    """
+def detect_numeric_annotation_types(dataset):
+    """Classify numeric annotations using all available samples."""
+
+    annotation_names = dataset.annotations[0].keys()
+
+    continuous_variables = []
+    count_variables = []
+    binary_variables = []
+
+    for name in annotation_names:
+        values = np.asarray(
+            [annotation[name] for annotation in dataset.annotations],
+            dtype=float,
+        )
+
+        values = values[np.isfinite(values)]
+
+        if len(values) == 0:
+            continue
+
+        unique_values = np.unique(values)
+
+        if np.all(np.isin(unique_values, [0, 1])):
+            binary_variables.append(name)
+
+        elif (
+            np.all(values >= 0)
+            and np.all(values == np.floor(values))
+        ):
+            count_variables.append(name)
+
+        else:
+            continuous_variables.append(name)
+
+    return continuous_variables, count_variables, binary_variables
+
+def calculate_quartile_thresholds(dataset, train_indices, continuous_variables):
+    """Calculate Q1, Q2 and Q3 using training data only."""
 
     thresholds = {}
-    descriptor_names = list(dataset.molecular_descriptors)
 
-    for descriptor in descriptor_names:
+    for variable in continuous_variables:
+        values = np.asarray([
+            float(dataset.annotations[idx][variable])
+            for idx in train_indices
+        ])
 
-        values = []
-
-        for idx in train_indices:
-            annotation = dataset.annotations[idx]
-            values.append(float(annotation[descriptor]))
-
-        values = np.asarray(values)
-
-        thresholds[descriptor] = np.percentile(
-            values,
-            [25, 50, 75]
-        )
+        thresholds[variable] = np.percentile(values, [25, 50, 75])
 
     return thresholds
 
 def binarize_properties_annotation(dataset, idx, thresholds):
-
-    """ 
-    Binarize molecular descriptors using training-derived quartile thresholds. 
-    
-    Returns only binary descriptor annotations. 
-    """
+    """Binarise continuous annotations using training-derived quartiles."""
 
     annotation = dataset.annotations[idx]
     binary_annotation = {}
 
-    descriptor_names = list(dataset.molecular_descriptors)
-
-    for descriptor in descriptor_names:
-
-        value = float(annotation[descriptor])
-
-        q1, q2, q3 = thresholds[descriptor]
+    for variable, (q1, q2, q3) in thresholds.items():
+        value = float(annotation[variable])
 
         if value <= q1:
             quartile = 1
@@ -227,27 +247,26 @@ def binarize_properties_annotation(dataset, idx, thresholds):
         else:
             quartile = 4
 
-        # Add the four binary annotations
         for q in range(1, 5):
-            binary_annotation[f"{descriptor}_Q{q}"] = float(q == quartile)
+            binary_annotation[f"{variable}_Q{q}"] = int(q == quartile)
 
     return binary_annotation
 
-def calculate_motif_count_categories(
+def calculate_count_categories(
     emb_data,
     train_indices,
-    motif_names,
+    count_variables,
     min_category_count=5,
 ):
 
-    motif_categories = {}
+    count_categories = {}
 
-    for motif in motif_names:
+    for variable in count_variables:
 
         count_frequency = Counter()
 
         for idx in train_indices:
-            count = emb_data.annotations[idx][motif]
+            count = emb_data.annotations[idx][variable]
             count_frequency[count] += 1
 
         positive_counts = [
@@ -257,7 +276,7 @@ def calculate_motif_count_categories(
         ]
 
         if not positive_counts:
-            motif_categories[motif] = []
+            count_categories[variable] = []
             continue
 
         max_count = max(positive_counts)
@@ -302,70 +321,141 @@ def calculate_motif_count_categories(
             # Replace its exact category with an open-ended one.
             categories[-1] = f">={max_count}"
 
-        motif_categories[motif] = categories
+        count_categories[variable] = categories
 
-    return motif_categories
+    return count_categories
 
-def binarize_motif_counts(
-    dataset,
-    idx,
-    motif_categories,
-):
+def binarize_count_annotations(dataset, idx, count_categories):
+    """Binarise count annotations using training-derived categories."""
 
-    """ 
-    Binarize motif counts using training-derived categories. 
-    
-    Returns only binary motif annotations. 
-    Returns binary motif annotations for both:
-    - motif count categories
-    - motif presence/absence
-    """
-    
     binary_annotation = {}
 
-    for motif, categories in motif_categories.items():
+    for variable, categories in count_categories.items():
+        count = dataset.annotations[idx][variable]
 
-        count = dataset.annotations[idx][motif]
-
-        # General motif presence/absence
-        binary_annotation[f"{motif}_presence"] = int(count > 0)
+        binary_annotation[f"{variable}_presence"] = int(count > 0)
 
         for category in categories:
-
             if isinstance(category, int):
-                # Exact count
                 value = int(count == category)
 
             elif category.startswith(">="):
-                # Open-ended range
                 minimum = int(category[2:])
                 value = int(count >= minimum)
 
             else:
-                # Bounded range, e.g. "5-7"
                 lower, upper = map(int, category.split("-"))
                 value = int(lower <= count <= upper)
 
-            binary_annotation[f"{motif}_{category}"] = value
+            binary_annotation[f"{variable}_{category}"] = value
 
     return binary_annotation
 
-def binarize_all_annotations(dataset, idx, quartile_thresholds, motif_categories): 
+def binarize_all_annotations(
+    dataset,
+    idx,
+    quartile_thresholds,
+    count_categories,
+    binary_variables,
+):
+    """Add binary encodings while preserving original annotations."""
 
-    """ 
-    Binarize molecular descriptors and motif counts, and combine the resulting binary annotations. 
-    
-    """ 
+    annotation = dataset.annotations[idx]
 
     binary_properties = binarize_properties_annotation(
-        dataset, idx, quartile_thresholds
+        dataset,
+        idx,
+        quartile_thresholds,
     )
 
-    binary_motifs = binarize_motif_counts(
-        dataset, idx, motif_categories
+    binary_counts = binarize_count_annotations(
+        dataset,
+        idx,
+        count_categories,
     )
-    
-    return {**binary_properties, **binary_motifs}
+
+    return {
+        **annotation,
+        **binary_properties,
+        **binary_counts,
+    }
+
+def add_class_specific_annotations(
+    annotations,
+    targets,
+    continuous_variables,
+    count_variables,
+    binary_variables,
+    class_names={0: "insoluble", 1: "soluble"},
+):
+    class_annotations = []
+
+    continuous_variables = set(continuous_variables)
+    count_variables = set(count_variables)
+    binary_variables = set(binary_variables)
+
+    for annotation, target in zip(annotations, targets):
+        if torch.is_tensor(target):
+            target = target.item()
+
+        if isinstance(target, np.generic):
+            target = target.item()
+
+        if target not in class_names:
+            raise ValueError(
+                f"Expected a target in {list(class_names)}, got {target}."
+            )
+
+        updated = annotation.copy()
+
+        for name, value in annotation.items():
+
+            # Original continuous descriptors
+            if name in continuous_variables:
+                for cls, cls_name in class_names.items():
+                    updated[f"{name}_{cls_name}"] = (
+                        value if target == cls else np.nan
+                    )
+
+            # Raw count annotations
+            elif name in count_variables:
+                for cls, cls_name in class_names.items():
+                    updated[f"{name}_{cls_name}"] = (
+                        value if target == cls else 0
+                    )
+
+            # Binary annotations, including count categories and quartiles
+            elif name in binary_variables:
+                for cls, cls_name in class_names.items():
+                    updated[f"{name}_{cls_name}"] = int(
+                        value == 1 and target == cls
+                    )
+
+        class_annotations.append(updated)
+
+    all_names = class_annotations[0].keys()
+
+    constant_variables = {
+        name
+        for name in all_names
+        if len({
+            annotation[name]
+            for annotation in class_annotations
+            if not pd.isna(annotation[name])
+        }) <= 1
+    }
+
+    class_annotations = [
+        {
+            name: value
+            for name, value in annotation.items()
+            if name not in constant_variables
+        }
+        for annotation in class_annotations
+    ]
+
+
+    return class_annotations
 
 def confusion_counts(binary_acts, labels):
     """
@@ -382,14 +472,14 @@ def confusion_counts(binary_acts, labels):
     if binary_acts.ndim == 1:
         tp = (binary_acts & labels).sum()
         fp = (binary_acts & ~labels).sum()
-        tn = (~binary_acts & ~labels).sum()
         fn = (~binary_acts & labels).sum()
+        tn = binary_acts.numel() - tp - fp - fn
     else:
         labels = labels.unsqueeze(1)
         tp = (binary_acts & labels).sum(dim=0)
         fp = (binary_acts & ~labels).sum(dim=0)
-        tn = (~binary_acts & ~labels).sum(dim=0)
         fn = (~binary_acts & labels).sum(dim=0)
+        tn = binary_acts.shape[0] - tp - fp - fn
 
     return tp, fp, tn, fn
 
@@ -416,9 +506,9 @@ def concept_comparison(sae_model, data_loader, threshold = 0.5, device = 'cuda')
         for concept in concept_names
     }
 
-    max_features, frequency_stats = compute_feature_maxima(sae_model=sae_model, 
-                                                           data_loader=data_loader,
-                                                           device = device)
+    max_features, frequency_stats, mean_active_activation = compute_feature_maxima(sae_model=sae_model, 
+                                                                                   data_loader=data_loader,
+                                                                                   device = device)
         
     with torch.no_grad():
         for batch in data_loader:
@@ -452,9 +542,12 @@ def calculate_f1(metrics, concept_name, threshold):
 
     return f1
 
-def gea_annotation(sae_model, data_loader, 
-                   thresholds = [0, 0.15, 0.5, 0.6, 0.8], 
-                   device = 'cuda'):
+def gea_annotation(
+        sae_model, 
+        data_loader, 
+        thresholds = [0, 0.15, 0.5, 0.6, 0.8], 
+        device = 'cuda',
+    ):
 
     # In this version, GEA annotation does not select features based on F1-score
 
@@ -469,9 +562,9 @@ def gea_annotation(sae_model, data_loader,
         for concept in concept_names
     }
 
-    max_features, frequency_stats = compute_feature_maxima(sae_model = sae_model, 
-                                                           data_loader = data_loader,
-                                                           device = device)
+    max_features, frequency_stats, mean_active_activation = compute_feature_maxima(sae_model = sae_model, 
+                                                                                   data_loader = data_loader,
+                                                                                   device = device)
 
     metrics = {
         concept: {
@@ -525,6 +618,166 @@ def gea_annotation(sae_model, data_loader,
             f1_scores_concepts[concept_name][th] = f1scores
                       
     return f1_scores_concepts, concept_counts, frequency_stats, max_features
+
+
+def gea_annotation(
+    sae_model,
+    data_loader,
+    max_features,
+    thresholds=(0, 0.15, 0.5, 0.6, 0.8),
+    device="cuda",
+    numeric_variables=None,
+):
+    sae_model.to(device)
+    sae_model.eval()
+
+    print("Initializing metrics and counts...")
+
+    numeric_variables = set(numeric_variables or [])
+
+    all_annotations = data_loader.dataset[0]["annotation"]
+    concept_names = [
+        name for name in all_annotations
+        if name not in numeric_variables
+    ]
+
+    num_features = sae_model.latent_dim
+    concept_counts = {concept: 0 for concept in concept_names}
+
+    max_features = max_features.to(device)
+
+    print("Calculating metrics for each concept and threshold...")
+    metrics = {
+        concept: {
+            th: {
+                "tp": torch.zeros(num_features, device=device),
+                "fp": torch.zeros(num_features, device=device),
+                "tn": torch.zeros(num_features, device=device),
+                "fn": torch.zeros(num_features, device=device),
+            }
+            for th in thresholds
+        }
+        for concept in concept_names
+    }
+
+    # Statistics for the current split.
+    activation_count = torch.zeros(num_features, device=device)
+    activation_sum = torch.zeros(num_features, device=device)
+    n_samples = 0
+
+    # Accumulate latent activations and numeric values here
+    all_activations = []
+    all_numeric_values = {name: [] for name in numeric_variables}
+
+    with torch.inference_mode():
+        for batch in data_loader:
+            embeddings = batch["embedding"].to(device)
+            annotations = batch["annotation"]
+
+            z_sae, _ = sae_model(embeddings)
+            batch_size = z_sae.shape[0]
+            n_samples += batch_size
+
+            # Cache activations only for the duration of this call.
+            if numeric_variables:
+                all_activations.append(z_sae.cpu())
+
+                for name in numeric_variables:
+                    all_numeric_values[name].append(
+                        annotations[name].detach().cpu()
+                    )
+
+            active = z_sae > 0
+            activation_count += active.sum(dim=0)
+            activation_sum += z_sae.sum(dim=0)
+
+            # Existing binary-concept analysis.
+            binary_activations = {
+                th: activations_preparation(
+                    sae_activations=z_sae,
+                    feature_maxima=max_features,
+                    threshold=th,
+                )
+                for th in thresholds
+            }
+
+            for concept_name in concept_names:
+                labels_cpu = annotations[concept_name]
+                concept_counts[concept_name] += labels_cpu.sum().item()
+                labels = labels_cpu.to(device)
+
+                for th in thresholds:
+
+                    tp, fp, tn, fn = confusion_counts(
+                        binary_acts = binary_activations[th],
+                        labels = labels,
+                    )
+
+                    metrics[concept_name][th]["tp"] += tp
+                    metrics[concept_name][th]["fp"] += fp
+                    metrics[concept_name][th]["tn"] += tn
+                    metrics[concept_name][th]["fn"] += fn
+
+    frequency_stats = (activation_count / n_samples).cpu()
+    mean_active_activation = (
+        activation_sum / activation_count.clamp(min=1)
+    ).cpu()
+
+    for concept in concept_names:
+        for th in thresholds:
+            for metric in ("tp", "fp", "tn", "fn"):
+                metrics[concept][th][metric] = (
+                    metrics[concept][th][metric].cpu()
+                )
+
+    print("Calculating F1 scores...")
+    f1_scores_concepts = {
+        concept: {
+            th: calculate_f1(
+                metrics=metrics,
+                concept_name=concept,
+                threshold=th,
+            )
+            for th in thresholds
+        }
+        for concept in concept_names
+    }
+
+    print("Calculating numeric correlations...")
+    numeric_correlations = {}
+
+    if numeric_variables:
+        activations = torch.cat(all_activations).numpy()
+        never_activated = (activation_count == 0).cpu().numpy()
+
+        for name in numeric_variables:
+            values = torch.cat(all_numeric_values[name]).numpy()
+            # Exclude samples with NaN values for this variable.
+            valid = ~np.isnan(values)
+
+            correlations = np.zeros(num_features, dtype=float)
+            active_features = np.flatnonzero(~never_activated)
+
+            if valid.sum() >= 2:
+                for feature in active_features:
+                    correlations[feature] = spearmanr(
+                        values[valid],
+                        activations[valid, feature],
+                    ).statistic
+
+            else:
+                correlations[active_features] = np.nan
+
+            numeric_correlations[name] = np.asarray(correlations)
+
+    return (
+        f1_scores_concepts,
+        concept_counts,
+        frequency_stats,
+        max_features.cpu(),
+        mean_active_activation,
+        numeric_correlations,
+    )
 
 
 def best_concept_features(counts, best_features, min_count=50):
@@ -637,6 +890,36 @@ def select_concept_features(
 
     return features_per_concept
 
+def select_numeric_features(
+    numeric_correlations,
+    correlation_threshold=0.5,
+):
+    """Select SAE features correlated with numeric variables."""
+
+    features_per_variable = {}
+
+    for variable, correlations in numeric_correlations.items():
+        selected = []
+
+        for feature, correlation in enumerate(correlations):
+            if not np.isfinite(correlation):
+                continue
+
+            if abs(correlation) >= correlation_threshold:
+                selected.append({
+                    "feature": feature,
+                    "correlation": float(correlation),
+                })
+
+        selected.sort(
+            key=lambda x: abs(x["correlation"]),
+            reverse=True,
+        )
+
+        features_per_variable[variable] = selected
+
+    return features_per_variable
+
 
 def concept_feature_test(sae_model, data_loader, max_features, 
                          concept_feature_pairs, device = 'cuda'):
@@ -687,6 +970,117 @@ def concept_feature_test(sae_model, data_loader, max_features,
             info["test"]["f1"] = f1
                     
     return concept_feature_pairs 
+
+
+def concept_feature_test(
+    sae_model,
+    data_loader,
+    max_features,
+    concept_feature_pairs,
+    device="cuda",
+    numeric_feature_pairs=None,
+    numeric_variables=None,
+):
+    sae_model.to(device)
+    sae_model.eval()
+
+    # Initialise categorical concept evaluation
+    for concept, feature_list in concept_feature_pairs.items():
+        for info in feature_list:
+            info["test"] = {
+                "test_count": 0,
+                "tp": 0,
+                "fp": 0,
+                "tn": 0,
+                "fn": 0,
+            }
+
+    numeric_feature_pairs = numeric_feature_pairs or {}
+    numeric_variables = numeric_variables or []
+
+    # Collect test-set values for numeric correlations
+    numeric_values = {var: [] for var in numeric_variables}
+    numeric_activations = {
+        var: {info["feature"]: [] for info in feature_list}
+        for var, feature_list in numeric_feature_pairs.items()
+    }
+
+    with torch.no_grad():
+        for batch in data_loader:
+            embeddings = batch["embedding"].to(device)
+            annotation = batch["annotation"]
+            z_sae, _ = sae_model(embeddings)
+
+            # Evaluate categorical concepts using F1
+            for concept, feature_list in concept_feature_pairs.items():
+                labels = annotation[concept].to(device)
+
+                for info in feature_list:
+                    feature = info["feature"]
+
+                    binary = activations_preparation(
+                        sae_activations=z_sae[:, feature],
+                        feature_maxima=max_features[feature],
+                        threshold=info["threshold"],
+                    )
+
+                    info["test"]["test_count"] += labels.sum().item()
+
+                    tp, fp, tn, fn = confusion_counts(
+                        binary_acts=binary,
+                        labels=labels,
+                    )
+
+                    info["test"]["tp"] += tp.item()
+                    info["test"]["fp"] += fp.item()
+                    info["test"]["tn"] += tn.item()
+                    info["test"]["fn"] += fn.item()
+
+            # Collect original numeric values and SAE activations
+            for variable, feature_list in numeric_feature_pairs.items():
+                values = annotation[variable].detach().cpu().numpy().reshape(-1)
+                numeric_values[variable].extend(values.tolist())
+
+                for info in feature_list:
+                    feature = info["feature"]
+                    numeric_activations[variable][feature].extend(
+                        z_sae[:, feature].detach().cpu().numpy().reshape(-1).tolist()
+                    )
+
+    # Calculate test F1 scores
+    for concept, feature_list in concept_feature_pairs.items():
+        for info in feature_list:
+            tp = info["test"]["tp"]
+            fp = info["test"]["fp"]
+            fn = info["test"]["fn"]
+
+            info["test"]["f1"] = (
+                2 * tp / (2 * tp + fp + fn + 1e-8)
+            )
+
+    # Calculate test correlations for selected numeric feature pairs
+    for variable, feature_list in numeric_feature_pairs.items():
+        values = np.asarray(numeric_values[variable])
+
+        for info in feature_list:
+            feature = info["feature"]
+            activations = np.asarray(
+                numeric_activations[variable][feature]
+            )
+
+            valid = np.isfinite(values) & np.isfinite(activations)
+
+            if valid.sum() >= 2:
+                correlation = spearmanr(
+                    values[valid],
+                    activations[valid],
+                ).statistic
+            else:
+                correlation = np.nan
+
+            info["test_correlation"] = float(correlation)
+
+    return concept_feature_pairs, numeric_feature_pairs
 
 
 def umap_hdbscan_decoder(W_dec, umap_components=20, umap_neighbors=15, 
@@ -749,6 +1143,7 @@ def umap_hdbscan_decoder(W_dec, umap_components=20, umap_neighbors=15,
     print("\nClusters:")
 
     return embedding, cluster_labels
+    
 
 
 def extract_edge_activations(sae_edge, gnn_model, data_loader, device):
