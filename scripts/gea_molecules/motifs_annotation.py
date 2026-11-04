@@ -30,7 +30,9 @@ def main(args):
     # Graph embeddings
     graph_obj = annotate_graph_GroverEmbeds(
         args.embeddings_path,
-        embedding_key=args.embedding_key_graph
+        motif_dict=motif_dict,
+        embedding_key=args.embedding_key_graph,
+        annotations_csv=args.annotations_csv,
     )
 
     np.savez_compressed(
@@ -40,6 +42,7 @@ def main(args):
         entities=np.array(graph_obj["entities"], dtype=object),
         prediction=graph_obj["prediction"],
         target=graph_obj["target"],
+        molecular_descriptors=np.array(graph_obj["molecular_descriptors"], dtype=object),
     )
 
 if __name__ == "__main__":
@@ -89,7 +92,13 @@ if __name__ == "__main__":
         default="graph_from_atom_from_atom",
         help="Key for graph embeddings in the Grover embeddings dictionary"
     )
-
+    parser.add_argument(
+        "--annotations_csv",
+        type=str,
+        default=None,
+        help="Path to CSV file containing additional annotations for SMILES"
+    )
+    
     args = parser.parse_args()
 
     main(args)

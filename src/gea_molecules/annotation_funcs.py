@@ -1,100 +1,56 @@
 import torch
 from rdkit import Chem
 import numpy as np
-from rdkit import Chem
 from rdkit.Chem import Fragments, Descriptors, Crippen, Lipinski, rdMolDescriptors
 import inspect
+import pandas as pd
 
-def bondConceptAnnotation(mol):
-    n_atoms = mol.GetNumAtoms()
-    pi_mask = [0] * n_atoms
-    pi_double_mask = [0] * n_atoms
-    pi_triple_mask = [0] * n_atoms
-    pi_aromatic_mask = [0] * n_atoms
+def get_motif_matches(mol, motif_dict):
+    matches = {}
 
-    for bond in mol.GetBonds():
-        i = bond.GetBeginAtomIdx()
-        j = bond.GetEndAtomIdx()
+    for name, smarts in motif_dict.items():
+        pattern = Chem.MolFromSmarts(smarts)
 
-        # Double bond
-        if bond.GetBondType() == Chem.BondType.DOUBLE:
-            pi_mask[i] = 1
-            pi_mask[j] = 1
+        if pattern is None:
+            matches[name] = []
+            continue
 
-            pi_double_mask[i] = 1
-            pi_double_mask[j] = 1
+        matches[name] = mol.GetSubstructMatches(pattern)
 
-        # Triple bond
-        elif bond.GetBondType() == Chem.BondType.TRIPLE:
-            pi_mask[i] = 1
-            pi_mask[j] = 1
+    return matches
 
-            pi_triple_mask[i] = 1
-            pi_triple_mask[j] = 1
+def motif_annotation(mol, motif_dict, level="node"):
 
-        # Aromatic bond
-        elif bond.GetIsAromatic():
-            pi_mask[i] = 1
-            pi_mask[j] = 1
+    matches = get_motif_matches(mol, motif_dict)
 
-            pi_aromatic_mask[i] = 1
-            pi_aromatic_mask[j] = 1
+    if level == "node":
 
-    return {
-        "pi bond": pi_mask,
-        "pi bond - double": pi_double_mask,
-        "pi bond - triple": pi_triple_mask,
-        "pi bond - aromatic": pi_aromatic_mask,
-    }
+        annotations = {}
+        n_atoms = mol.GetNumAtoms()
 
-def motifAnnotation(mol, motif_dict):
-    mol_dict = {}
+        for name, motif_matches in matches.items():
 
-    # -----------------------------------------
-    # SMARTS-based concepts
-    # -----------------------------------------
+            mask = [0] * n_atoms
 
-    for motif, smarts in motif_dict.items():
-        patt = Chem.MolFromSmarts(smarts)
-        mask = [0]*mol.GetNumAtoms()
-        for match in mol.GetSubstructMatches(patt):
-            for atom_idx in match:
-                mask[atom_idx] = 1
-    
-        mol_dict[motif] = mask
+            for match in motif_matches:
+                for atom_idx in match:
+                    mask[atom_idx] = 1
 
-    # -----------------------------------------
-    # Bond-based concepts
-    # -----------------------------------------
+            annotations[name] = mask
 
-    bond_annotations = bondConceptAnnotation(mol)
+    elif level == "graph":
 
-    mol_dict.update(bond_annotations)
+        annotations = {
+            name: len(motif_matches)
+            for name, motif_matches in matches.items()
+        }
 
-    return mol_dict
+    else:
+        raise ValueError(
+            "`level` must be either 'node' or 'graph'"
+        )
 
-def fragments_count(mol):
-
-    mol_fragments={}
-
-    halogen_patterns = {
-        "F": Chem.MolFromSmarts("[F]"),
-        "Cl": Chem.MolFromSmarts("[Cl]"),
-        "Br": Chem.MolFromSmarts("[Br]"),
-        "I": Chem.MolFromSmarts("[I]"),
-    }
-
-    for name, pattern in halogen_patterns.items():
-        mol_fragments[name] = len(mol.GetSubstructMatches(pattern))
-    
-    for name in dir(Fragments):
-        if name.startswith("fr_"):
-            func = getattr(Fragments, name)
-            if callable(func):
-                count = func(mol)
-                mol_fragments[name] = count
-
-    return mol_fragments
+    return annotations
 
 
 def calculate_descriptors(mol):
@@ -117,30 +73,49 @@ def calculate_descriptors(mol):
         "MolarRefractivity": Crippen.MolMR(mol),
     }
 
-def mol_annotation(mol):
+def filter_constant_annotations(annotations):
+    """
+    Remove annotations that are constant across all samples.
 
-    frag_counts = fragments_count(mol)
+    Parameters
+    ----------
+    annotations : list of dict
+        One annotation dictionary per sample.
 
-    total_annotation = {}
+    Returns
+    -------
+    annotations : list of dict
+        Filtered annotation dictionaries.
+    retained_annotations : list of str
+        Names of annotations that vary across samples.
+    """
+    if not annotations:
+        return annotations, []
 
-    for key, value in frag_counts.items():
-        new_keys = [key + count for count in ["_1", "_2", "_3+"]]
-        for new_key in new_keys:
-            if new_key not in total_annotation:
-                total_annotation[new_key] = 0
-        if value == 1:
-            total_annotation[key + "_1"] = 1
-        elif value == 2:
-            total_annotation[key + "_2"] = 1
-        elif value >= 3:
-            total_annotation[key + "_3+"] = 1
+    annotation_names = annotations[0].keys()
 
-    descriptors_mol = calculate_descriptors(mol)
+    retained_annotations = [
+        name
+        for name in annotation_names
+        if len({sample[name] for sample in annotations}) > 1
+    ]
 
-    for key, value in descriptors_mol.items():
-        total_annotation[key] = value
+    filtered_annotations = [
+        {
+            name: sample[name]
+            for name in retained_annotations
+        }
+        for sample in annotations
+    ]
 
-    return total_annotation
+    removed = set(annotation_names) - set(retained_annotations)
+
+    print(
+        f"Removed {len(removed)} constant annotations; "
+        f"retained {len(retained_annotations)}."
+    )
+
+    return filtered_annotations, retained_annotations
 
 def annotate_node_GroverEmbeds(embeddings_path, motif_dict, embedding_key="atom_from_atom"):
 
@@ -156,9 +131,14 @@ def annotate_node_GroverEmbeds(embeddings_path, motif_dict, embedding_key="atom_
 
         mol = Chem.MolFromSmiles(smi)
 
-        annotation = motifAnnotation(
+        if mol is None:
+            print(f"Warning: Could not parse SMILES '{smi}'. Skipping.")
+            continue
+
+        annotation = motif_annotation(
             mol=mol, 
-            motif_dict=motif_dict
+            motif_dict=motif_dict,
+            level = "node"
         )
 
         node_embeds = emb_dict[embedding_key] # We need to see if we want to consider atom_from_bond
@@ -167,14 +147,25 @@ def annotate_node_GroverEmbeds(embeddings_path, motif_dict, embedding_key="atom_
 
         n_nodes = node_embeds.shape[0]
 
+        if n_nodes != mol.GetNumAtoms():
+            raise ValueError(
+                f"Number of nodes ({n_nodes}) does not match "
+                f"number of atoms ({mol.GetNumAtoms()}) for {smi}"
+            )
+
         for i in range(n_nodes):
             annotations.append({
                 name: values[i]
                 for name, values in annotation.items()
             })
+            
             entities.append(smi)
             predictions.append(emb_dict["prediction"])
             targets.append(emb_dict["target"])
+
+    annotations, retained_annotations = filter_constant_annotations(
+        annotations
+    )
 
     return {
         "embeddings": np.concatenate(emb_array, axis=0),
@@ -182,11 +173,42 @@ def annotate_node_GroverEmbeds(embeddings_path, motif_dict, embedding_key="atom_
         "entities": entities,
         "prediction": np.array(predictions),
         "target": np.array(targets),
+        "retained_annotations": retained_annotations,
     }
 
-def annotate_graph_GroverEmbeds(embeddings_path, embedding_key = "graph_from_atom_from_atom"):
+def annotate_graph_GroverEmbeds(
+        embeddings_path, 
+        motif_dict, 
+        embedding_key = "graph_from_atom_from_atom",
+        annotations_csv=None,):
 
     embeddings = torch.load(embeddings_path)
+
+    # Load optional additional annotations
+    extra_annotations = {}
+
+    if annotations_csv is not None:
+        df = pd.read_csv(annotations_csv)
+
+        if df.shape[1] < 2:
+            raise ValueError(
+                "The annotations CSV must contain a SMILES column "
+                "and at least one annotation column."
+            )
+
+        smiles_col = df.columns[0]
+
+        if df[smiles_col].duplicated().any():
+            duplicates = df.loc[
+                df[smiles_col].duplicated(), smiles_col
+            ].tolist()
+            raise ValueError(
+                f"Duplicate SMILES in annotations CSV: {duplicates[:5]}"
+            )
+
+        extra_annotations = (
+            df.set_index(smiles_col).to_dict(orient="index")
+        )
 
     emb_array = []
     annotations = []
@@ -198,7 +220,34 @@ def annotate_graph_GroverEmbeds(embeddings_path, embedding_key = "graph_from_ato
 
         mol = Chem.MolFromSmiles(smi)
 
-        annotation = mol_annotation(mol)
+        if mol is None:
+            print(f"Warning: Could not parse SMILES '{smi}'. Skipping.")
+            continue
+
+        annotation = motif_annotation(
+            mol=mol,
+            motif_dict=motif_dict,
+            level="graph"
+        )
+
+        descriptors_mol = calculate_descriptors(mol)
+        annotation.update(descriptors_mol)
+
+        # Add optional annotations matched by SMILES
+        if annotations_csv is not None:
+            if smi not in extra_annotations:
+                raise ValueError(
+                    f"SMILES '{smi}' is missing from {annotations_csv}."
+                )
+
+            for key, value in extra_annotations[smi].items():
+                if key in annotation:
+                    raise ValueError(
+                        f"Additional annotation '{key}' conflicts "
+                        "with an existing annotation."
+                    )
+
+                annotation[key] = value
 
         graph_embed = emb_dict[embedding_key]
 
@@ -211,12 +260,21 @@ def annotate_graph_GroverEmbeds(embeddings_path, embedding_key = "graph_from_ato
         predictions.append(emb_dict["prediction"])
         targets.append(emb_dict["target"])
 
+    annotations, retained_annotations = filter_constant_annotations(
+        annotations
+    )
+
     return {
         "embeddings": np.stack(emb_array, axis=0),
         "annotations": annotations,
         "entities": entities,
         "prediction": np.array(predictions),
         "target": np.array(targets),
+        "molecular_descriptors": [
+            name for name in descriptors_mol
+            if name in retained_annotations
+        ],
+        "retained_annotations": retained_annotations,
     }
 
 
