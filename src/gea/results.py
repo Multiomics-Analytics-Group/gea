@@ -133,7 +133,9 @@ def build_feature_annotations(
     ----------
     concept_feature_pairs : dict
         Annotation -> list of feature information dictionaries.
-        Requires 'feature', 'f1', and 'test'['f1'].
+        Requires 'feature', 'score', and 'test'['score'] (F1 or MCC).
+        Results saved before the score option was added use 'f1'
+        instead of 'score'; both are accepted.
 
     numeric_feature_pairs : dict
         Numeric variable -> list of feature information dictionaries.
@@ -170,8 +172,9 @@ def build_feature_annotations(
         for info in feature_list:
             feature = info["feature"]
 
-            val = info.get("f1", np.nan)
-            test = info.get("test", {}).get("f1", np.nan)
+            test_info = info.get("test", {})
+            val = info.get("score", info.get("f1", np.nan))
+            test = test_info.get("score", test_info.get("f1", np.nan))
 
             val = float(val)
             test = float(test)
@@ -331,7 +334,10 @@ def plot_top_feature_annotations(
     title,
     top_k=20,
     path=None,
+    score="f1",
 ):
+    """score : "f1" or "mcc", the score used for categorical annotations
+    (only changes the x-axis label)."""
 
     candidates = []
 
@@ -489,8 +495,10 @@ def plot_top_feature_annotations(
     ax.set_yticks(y)
     ax.set_yticklabels(labels)
 
+    score_labels = {"f1": "F1 score", "mcc": "MCC"}
+
     ax.set_xlabel(
-        "F1 score"
+        score_labels.get(score, score)
         if annotation_type == "categorical"
         else "Absolute Spearman correlation"
     )

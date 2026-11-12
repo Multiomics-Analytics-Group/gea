@@ -140,6 +140,10 @@ def main(args):
     # Load GEA results
     gea_result = torch.load(args.gea_result_path, weights_only=False)
 
+    # Score chosen in gea_pipeline.py (--score).
+    score = gea_result.get("score", "f1")
+    print(f"Categorical annotations were scored with: {score}")
+
     # Plot feature activity
     plot_feature_activity_upset(
         gea_result,
@@ -177,6 +181,7 @@ def main(args):
         path=os.path.join(
             args.output_dir, "top_categorical_features.png"
         ),
+        score=score,
     )
 
     # Plot numeric annotations

@@ -154,21 +154,22 @@ def main(args):
         device=device,
     )
 
-    print("Running GEA annotation on validation data...")
-    f1_scores_concepts, concept_counts, frequency_stats_val, _, mean_active_activation_val, numeric_correlations = gea_annotation(
-        sae_model = sae_graph, 
-        data_loader = val_loader, 
+    print(f"Running GEA annotation on validation data (score: {args.score})...")
+    concept_scores, concept_counts, frequency_stats_val, _, mean_active_activation_val, numeric_correlations = gea_annotation(
+        sae_model = sae_graph,
+        data_loader = val_loader,
         max_features=max_features_train,
-        thresholds = args.thresholds, 
+        thresholds = args.thresholds,
         device = device,
         numeric_variables=numeric_variables if args.is_numeric else None,
+        score=args.score,
     )
     print("GEA annotation completed.")
     print("Selecting concept features...")
     concept_feature_pairs = select_concept_features(
-        counts=concept_counts, 
-        f1_scores=f1_scores_concepts,
-        f1_threshold=args.f1_threshold,
+        counts=concept_counts,
+        scores=concept_scores,
+        score_threshold=args.score_threshold,
         min_count=args.min_count
     )
 
@@ -188,6 +189,7 @@ def main(args):
         numeric_feature_pairs=numeric_feature_pairs,
         numeric_variables=numeric_variables,
         device=device,
+        score=args.score,
     )
 
     print("Computing test-set activation statistics...")
@@ -195,7 +197,8 @@ def main(args):
                                                                                                   data_loader = test_loader,
                                                                                                   device = device)
 
-    results = {"f1_scores_concepts": f1_scores_concepts, 
+    results = {"score": args.score,
+               "concept_scores": concept_scores,
                "numeric_correlations": numeric_correlations,
                "concept_counts": concept_counts, 
                "frequency_stats_train": frequency_stats_train, 
@@ -307,10 +310,27 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--score",
+        type=str,
+        choices=["f1", "mcc"],
+        default="f1",
+        help=(
+            "Score used to associate SAE features with categorical concepts: "
+            "'f1' (F1 score, range 0 to 1) or 'mcc' (Matthews correlation "
+            "coefficient, range -1 to 1)."
+        ),
+    )
+
+    parser.add_argument(
+        "--score_threshold",
         "--f1_threshold",
+        dest="score_threshold",
         type=float,
         default=0.5,
-        help="Threshold for selecting features based on F1-score."
+        help=(
+            "Minimum validation score (F1 or MCC, see --score) for selecting "
+            "a feature for a concept. --f1_threshold is kept as an alias."
+        ),
     )
 
     parser.add_argument(

@@ -532,15 +532,57 @@ def concept_comparison(sae_model, data_loader, threshold = 0.5, device = 'cuda')
 
     return metrics, concept_counts, frequency_stats, max_features
 
+SCORES = ("f1", "mcc")
+
+SCORE_LABELS = {
+    "f1": "F1 score",
+    "mcc": "Matthews correlation coefficient (MCC)",
+}
+
+
+def compute_score(tp, fp, tn, fn, score="f1"):
+    """Compute an association score from confusion counts.
+
+    Works on scalars or on tensors of shape (F,) (one value per feature).
+
+    score : "f1" or "mcc"
+        - "f1"  = 2TP / (2TP + FP + FN), in [0, 1]. Ignores true negatives.
+        - "mcc" = (TP*TN - FP*FN) / sqrt((TP+FP)(TP+FN)(TN+FP)(TN+FN)),
+          in [-1, 1]. Uses all four counts; 0 when a margin is empty.
+    """
+    if score not in SCORES:
+        raise ValueError(f"Unknown score '{score}'. Use one of {SCORES}.")
+
+    # float64 so the MCC products do not overflow or lose precision.
+    tp, fp, tn, fn = (
+        torch.as_tensor(v, dtype=torch.float64) for v in (tp, fp, tn, fn)
+    )
+
+    if score == "f1":
+        return 2 * tp / (2 * tp + fp + fn + 1e-8)
+
+    numerator = tp * tn - fp * fn
+    denominator = torch.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+
+    return torch.where(
+        denominator > 0,
+        numerator / denominator.clamp(min=1e-12),
+        torch.zeros_like(numerator),
+    )
+
+
+def calculate_score(metrics, concept_name, threshold, score="f1"):
+
+    counts = metrics[concept_name][threshold]
+
+    return compute_score(
+        counts["tp"], counts["fp"], counts["tn"], counts["fn"], score=score
+    ).float()
+
+
 def calculate_f1(metrics, concept_name, threshold):
 
-    tp = metrics[concept_name][threshold]["tp"].float()
-    fp = metrics[concept_name][threshold]["fp"].float()
-    fn = metrics[concept_name][threshold]["fn"].float()
-
-    f1 = 2 * tp / (2 * tp + fp + fn + 1e-8)
-
-    return f1
+    return calculate_score(metrics, concept_name, threshold, score="f1")
 
 def gea_annotation(
         sae_model, 
@@ -627,7 +669,16 @@ def gea_annotation(
     thresholds=(0, 0.15, 0.5, 0.6, 0.8),
     device="cuda",
     numeric_variables=None,
+    score="f1",
 ):
+    """Score every (concept, SAE feature, threshold) combination.
+
+    score : "f1" or "mcc" — the association score returned for each
+    categorical concept (see ``compute_score``).
+    """
+    if score not in SCORES:
+        raise ValueError(f"Unknown score '{score}'. Use one of {SCORES}.")
+
     sae_model.to(device)
     sae_model.eval()
 
@@ -730,13 +781,14 @@ def gea_annotation(
                     metrics[concept][th][metric].cpu()
                 )
 
-    print("Calculating F1 scores...")
-    f1_scores_concepts = {
+    print(f"Calculating {SCORE_LABELS[score]}...")
+    concept_scores = {
         concept: {
-            th: calculate_f1(
+            th: calculate_score(
                 metrics=metrics,
                 concept_name=concept,
                 threshold=th,
+                score=score,
             )
             for th in thresholds
         }
@@ -771,7 +823,7 @@ def gea_annotation(
             numeric_correlations[name] = np.asarray(correlations)
 
     return (
-        f1_scores_concepts,
+        concept_scores,
         concept_counts,
         frequency_stats,
         max_features.cpu(),
@@ -823,10 +875,16 @@ def best_concept_features(counts, best_features, min_count=50):
 
 def select_concept_features(
     counts,
-    f1_scores,
-    f1_threshold=0.5,
-    min_count=50
+    scores,
+    score_threshold=0.5,
+    min_count=50,
 ):
+    """Keep, per concept, the features whose score exceeds score_threshold.
+
+    ``scores`` is the concept -> threshold -> per-feature score mapping
+    returned by ``gea_annotation`` (F1 or MCC). Each selected feature stores
+    its best validation value under the key "score".
+    """
 
     valid_concepts = [
         concept
@@ -838,26 +896,26 @@ def select_concept_features(
 
     for concept in valid_concepts:
 
-        n_thresholds = len(f1_scores[concept])
+        n_thresholds = len(scores[concept])
 
         # feature -> information accumulated across thresholds
         feature_results = {}
 
-        for th, scores in f1_scores[concept].items():
+        for th, feature_scores in scores[concept].items():
 
-            for feature, f1 in enumerate(scores):
+            for feature, value in enumerate(feature_scores):
 
-                f1 = f1.item()
+                value = value.item()
 
-                # Only consider features passing the F1 threshold
-                if f1 <= f1_threshold:
+                # Only consider features passing the score threshold
+                if value <= score_threshold:
                     continue
 
                 if feature not in feature_results:
 
                     feature_results[feature] = {
                         "feature": feature,
-                        "f1": f1,
+                        "score": value,
                         "threshold": th,
                         "validation_count": counts[concept],
                         "threshold_count": 1,
@@ -868,9 +926,9 @@ def select_concept_features(
                     # Feature passed the threshold again
                     feature_results[feature]["threshold_count"] += 1
 
-                    # Keep the best F1 / threshold
-                    if f1 > feature_results[feature]["f1"]:
-                        feature_results[feature]["f1"] = f1
+                    # Keep the best score / threshold
+                    if value > feature_results[feature]["score"]:
+                        feature_results[feature]["score"] = value
                         feature_results[feature]["threshold"] = th
 
         # Add proportion of thresholds
@@ -879,10 +937,10 @@ def select_concept_features(
                 feature_info["threshold_count"] / n_thresholds
             )
 
-        # Sort by F1
+        # Sort by score
         selected = sorted(
             feature_results.values(),
-            key=lambda x: x["f1"],
+            key=lambda x: x["score"],
             reverse=True
         )
 
@@ -980,7 +1038,16 @@ def concept_feature_test(
     device="cuda",
     numeric_feature_pairs=None,
     numeric_variables=None,
+    score="f1",
 ):
+    """Re-score the selected pairs on the test set.
+
+    score : "f1" or "mcc" — use the same score as in ``gea_annotation``.
+    The test value is stored in info["test"]["score"].
+    """
+    if score not in SCORES:
+        raise ValueError(f"Unknown score '{score}'. Use one of {SCORES}.")
+
     sae_model.to(device)
     sae_model.eval()
 
@@ -1011,7 +1078,7 @@ def concept_feature_test(
             annotation = batch["annotation"]
             z_sae, _ = sae_model(embeddings)
 
-            # Evaluate categorical concepts using F1
+            # Accumulate confusion counts for categorical concepts
             for concept, feature_list in concept_feature_pairs.items():
                 labels = annotation[concept].to(device)
 
@@ -1047,15 +1114,16 @@ def concept_feature_test(
                         z_sae[:, feature].detach().cpu().numpy().reshape(-1).tolist()
                     )
 
-    # Calculate test F1 scores
+    # Calculate test scores
     for concept, feature_list in concept_feature_pairs.items():
         for info in feature_list:
-            tp = info["test"]["tp"]
-            fp = info["test"]["fp"]
-            fn = info["test"]["fn"]
+            counts = info["test"]
 
-            info["test"]["f1"] = (
-                2 * tp / (2 * tp + fp + fn + 1e-8)
+            info["test"]["score"] = float(
+                compute_score(
+                    counts["tp"], counts["fp"], counts["tn"], counts["fn"],
+                    score=score,
+                )
             )
 
     # Calculate test correlations for selected numeric feature pairs
