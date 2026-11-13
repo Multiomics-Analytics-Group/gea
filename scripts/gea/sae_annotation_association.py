@@ -10,6 +10,7 @@ from gea.gea import ShallowSAE
 from gea.analysis import (
     compute_feature_maxima,
     detect_numeric_annotation_types,
+    binarize_all_annotations,
 )
 from pathlib import Path
 import json
@@ -188,7 +189,48 @@ def main(args):
     print("Loading dataset...")
     dataset = EmbeddingDataset(args.embeddings_path)
 
-    splits = torch.load(args.splits_path, 
+    # Optional: convert numeric annotations to 0/1 with the cut-offs saved by
+    # gea_pipeline.py, so quartile (_Q1-_Q4) and count-category concepts also
+    # get a row in the prevalence table. Same function and cut-offs as stage 2.
+    if args.gea_result_path is not None:
+        gea_result = torch.load(
+            args.gea_result_path,
+            map_location="cpu",
+            weights_only=False,
+        )
+
+        if "binarization" not in gea_result:
+            raise ValueError(
+                f"{args.gea_result_path} has no 'binarization' entry. It was "
+                "made by an older gea_pipeline.py; rerun gea_pipeline.py to "
+                "save the cut-offs, or omit --gea_result_path."
+            )
+
+        quartile_thresholds = gea_result["binarization"]["quartile_thresholds"]
+        count_categories = gea_result["binarization"]["count_categories"]
+
+        if quartile_thresholds or count_categories:
+            print(
+                "Converting numeric annotations with the cut-offs from "
+                f"{args.gea_result_path} ({len(quartile_thresholds)} continuous, "
+                f"{len(count_categories)} count variables)..."
+            )
+
+            for idx in range(len(dataset)):
+                dataset.annotations[idx] = binarize_all_annotations(
+                    dataset,
+                    idx,
+                    quartile_thresholds,
+                    count_categories,
+                    binary_variables=[],
+                )
+        else:
+            print(
+                f"{args.gea_result_path} has no numeric cut-offs "
+                "(gea_pipeline.py ran without --is_numeric); nothing to convert."
+            )
+
+    splits = torch.load(args.splits_path,
                         map_location="cpu",
                         weights_only=False)
 
@@ -335,6 +377,10 @@ def main(args):
         # Classification configuration.
         "class_names": class_names,
         "classification_threshold": args.classification_threshold,
+
+        # Results file whose cut-offs were used to convert numeric
+        # annotations (None if no conversion was done).
+        "binarization_source": args.gea_result_path,
     }
 
     print("Saving results to:", args.output_path)
@@ -348,6 +394,17 @@ if __name__ == "__main__":
     parser.add_argument("--splits_path", required=True)
     parser.add_argument("--checkpoint_path", required=True)
     parser.add_argument("--output_path", default="class_activations.pt")
+
+    parser.add_argument(
+        "--gea_result_path",
+        default=None,
+        help=(
+            "Optional results file from gea_pipeline.py. When given, numeric "
+            "annotations are converted to 0/1 with the same cut-offs "
+            "(quartiles, count categories) before computing annotation "
+            "prevalence, so those concepts get prevalence points in the plots."
+        ),
+    )
 
     parser.add_argument(
         "--maxima_path",

@@ -23,6 +23,12 @@ def main(args):
     count_variables = []
     binary_variables = []
 
+    # Cut-offs used to convert numeric annotations to 0/1 (train split only).
+    # Empty unless --is_numeric. Saved in the results so later stages can
+    # apply exactly the same conversion.
+    quartile_thresholds = {}
+    count_categories = {}
+
     emb_data = EmbeddingDataset(args.embeddings_path)
 
     splits = torch.load(args.splits_path, weights_only=False)
@@ -198,6 +204,10 @@ def main(args):
                                                                                                   device = device)
 
     results = {"score": args.score,
+               "binarization": {
+                   "quartile_thresholds": quartile_thresholds,
+                   "count_categories": count_categories,
+               },
                "concept_scores": concept_scores,
                "numeric_correlations": numeric_correlations,
                "concept_counts": concept_counts, 
