@@ -990,19 +990,38 @@ def plot_discriminative_feature_proportions(
             str(annotation),
         )
 
-        # Annotation prevalence points.
+
+        threshold_idx = int(
+            np.argmin(
+                np.abs(
+                    np.asarray(thresholds, dtype=float)
+                    - annotation_threshold
+                )
+            )
+        )
+
+        ax.axvspan(
+            threshold_idx - 0.5,
+            threshold_idx + 0.5,
+            color="lightgrey",
+            alpha=0.18,
+            zorder=0,
+        )
+
+        ax.text(
+            threshold_idx,
+            0.98,
+            "Annotation\nthreshold",
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+
         if annotation_name in annotation_prevalence.index:
 
             prevalence = annotation_prevalence.loc[annotation_name]
-
-            threshold_idx = int(
-                np.argmin(
-                    np.abs(
-                        np.asarray(thresholds, dtype=float)
-                        - annotation_threshold
-                    )
-                )
-            )
 
             for group_name, offset, colour, _ in group_plot_info:
 
@@ -1019,24 +1038,6 @@ def plot_discriminative_feature_proportions(
                         s=75,
                         zorder=10,
                     )
-
-            ax.axvspan(
-                threshold_idx - 0.5,
-                threshold_idx + 0.5,
-                color="lightgrey",
-                alpha=0.18,
-                zorder=0,
-            )
-
-            ax.text(
-                threshold_idx,
-                0.98,
-                "Annotation\nthreshold",
-                transform=ax.get_xaxis_transform(),
-                ha="center",
-                va="top",
-                fontsize=8,
-            )
 
         ax.set_title(
             f"Feature {feature_id}: {annotation}\n"
