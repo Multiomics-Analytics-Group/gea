@@ -1080,24 +1080,15 @@ def plot_discriminative_feature_proportions(
 
         annotation = stats["annotation"]
         annotation_threshold = stats["threshold"]
-
-        # Remove class-specific suffixes from annotation names.
         suffixes = [
-            re.escape(f"_{name}")
-            for name in class_names.values()
+            f"_{name}" for name in class_names.values()
         ]
+        annotation_name = str(annotation)
 
-        suffix_pattern = (
-            r"(?:"
-            + "|".join(suffixes)
-            + r"|_presence)$"
-        )
-
-        annotation_name = re.sub(
-            suffix_pattern,
-            "",
-            str(annotation),
-        )
+        for suffix in suffixes:
+            if annotation_name.endswith(suffix):
+                annotation_name = annotation_name[:-len(suffix)]
+                break
 
         # Annotation prevalence points.
         if annotation_name in annotation_prevalence.index:
