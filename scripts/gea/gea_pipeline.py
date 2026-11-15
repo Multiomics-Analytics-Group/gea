@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 import argparse
 import json
+import numpy as np
 
 def main(args):
 
@@ -92,11 +93,43 @@ def main(args):
         class_names = args.class_names,
     )
 
+    print("Saving updated annotations in:", args.embeddings_path)
+
+    np.savez_compressed(
+        args.embeddings_path,
+        embeddings=emb_data.embeddings,
+        annotations=np.array(emb_data.annotations, dtype=object),
+        entities=emb_data.entities,
+        prediction=emb_data.predictions,
+        target=emb_data.targets,
+    )
+
     if args.is_numeric:
         numeric_variables += [
             f"{name}_{class_name}"
-            for name in continuous_variables
+            for name in continuous_variables + count_variables
             for class_name in args.class_names.values()
+        ]
+
+        # Remove numeric variables that were removed during
+        # constant-variable filtering in add_class_specific_annotations().
+        available_annotations = set(emb_data.annotations[0].keys())
+
+        missing_variables = [
+            name for name in numeric_variables
+            if name not in available_annotations
+        ]
+
+        if missing_variables:
+            print(
+                f"Removing {len(missing_variables)} numeric variables "
+                "that are constant or unavailable:"
+            )
+            print(missing_variables)
+
+        numeric_variables = [
+            name for name in numeric_variables
+            if name in available_annotations
         ]
 
     train_data = Subset(emb_data, splits["train"])
@@ -155,7 +188,14 @@ def main(args):
     )
 
     print("Running GEA annotation on validation data...")
-    f1_scores_concepts, concept_counts, frequency_stats_val, _, mean_active_activation_val, numeric_correlations = gea_annotation(
+    (
+        f1_scores_concepts, 
+        confusion_metrics,
+        concept_counts, 
+        frequency_stats_val, _, 
+        mean_active_activation_val, 
+        numeric_correlations
+    ) = gea_annotation(
         sae_model = sae_graph, 
         data_loader = val_loader, 
         max_features=max_features_train,
@@ -168,6 +208,7 @@ def main(args):
     concept_feature_pairs = select_concept_features(
         counts=concept_counts, 
         f1_scores=f1_scores_concepts,
+        confusion_metrics=confusion_metrics,
         f1_threshold=args.f1_threshold,
         min_count=args.min_count
     )
@@ -191,9 +232,13 @@ def main(args):
     )
 
     print("Computing test-set activation statistics...")
-    max_features_test, frequency_stats_test, mean_active_activation_test = compute_feature_maxima(sae_model = sae_graph, 
-                                                                                                  data_loader = test_loader,
-                                                                                                  device = device)
+    (
+        max_features_test,
+        frequency_stats_test,
+        mean_active_activation_test
+    ) = compute_feature_maxima(sae_model = sae_graph, 
+                               data_loader = test_loader,
+                               device = device)
 
     results = {"f1_scores_concepts": f1_scores_concepts, 
                "numeric_correlations": numeric_correlations,
@@ -212,8 +257,8 @@ def main(args):
                "numeric_feature_pairs_test": numeric_feature_pairs_test,
                "W_dec": sae_graph.W_dec.detach().cpu().numpy()}
 
-    print("Saving results in:", args.results_path)
-    torch.save(results, args.results_path)
+    print("Saving results in:", args.gea_result_path)
+    torch.save(results, args.gea_result_path)
 
 
 if __name__ == "__main__":
@@ -321,7 +366,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--results_path",
+        "--gea_result_path",
         type=str,
         default="gea_annotation_results.pt",
         help="Path to save metrics."
