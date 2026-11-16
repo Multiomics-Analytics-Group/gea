@@ -32,6 +32,7 @@ def get_embeddings(batch):
 
     return embeddings
 
+
 def calculate_annotation_prevalence(
     dataset,
     evaluation_indices,
@@ -40,27 +41,77 @@ def calculate_annotation_prevalence(
 ):
     """
     Calculate annotation counts and prevalence across correctly and
-    incorrectly classified soluble and insoluble molecules.
+    incorrectly classified samples for each target class.
 
-    Binary variables are counted directly.
-    Count variables are converted to binary presence/absence.
-    Continuous variables are excluded.
+    Only binary annotations are considered. Continuous and count annotations
+    are excluded. Class-specific annotations (e.g. annotations ending in
+    '_soluble' or '_insoluble') are also excluded.
+
+    Parameters
+    ----------
+    dataset : EmbeddingDataset
+        Dataset containing molecular annotations, target labels and model
+        predictions. Annotations are expected to be already processed and
+        binary (0/1).
+
+    evaluation_indices : list or array-like
+        Indices of the samples to include in the analysis.
+
+    class_names : dict, optional
+        Mapping between integer class labels and their corresponding names.
+        Defaults to {0: 'class_0', 1: 'class_1'}.
+
+    classification_threshold : float, optional
+        Threshold used to convert prediction probabilities into binary
+        class labels. Predictions greater than or equal to this threshold
+        are assigned to class 1. Defaults to 0.5.
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+
+        annotation_counts : pd.DataFrame
+            Number of samples containing each annotation, with columns
+            corresponding to correctly and incorrectly classified samples
+            in each target class.
+
+        annotation_prevalence : pd.DataFrame
+            Proportion of samples containing each annotation within each
+            classification group. Calculated as annotation_counts divided
+            by the corresponding group size.
+
+        class_prediction_group_sizes : pd.Series
+            Number of samples in each classification group.
+
+        binary_variables : list
+            Names of the binary annotations included in the analysis.
+
+    Notes
+    -----
+    Samples are grouped according to their actual target class and whether
+    their predicted class matches the target.
+
+    Annotation prevalence represents the proportion of samples containing
+    a given annotation, rather than the frequency of its occurrences within
+    individual samples.
     """
 
-    # Identify annotation types from the original annotations.
-    _, count_variables, binary_variables = (
-        detect_numeric_annotation_types(dataset)
-    )
+    if class_names is None:
+        class_names = {
+            0: "class_0",
+            1: "class_1",
+        }
 
-    selected_variables = list(dict.fromkeys(
-        binary_variables + count_variables
-    ))
+    # Identify binary annotations.
+    _, _, binary_variables = detect_numeric_annotation_types(dataset)
 
-    # Extract annotations for the selected molecules only.
+    # Extract annotations for the selected samples.
     annotations_df = pd.DataFrame.from_records(
         [dataset.annotations[int(i)] for i in evaluation_indices]
     ).fillna(0)
 
+    # Extract targets and predictions.
     targets = np.asarray([
         dataset[int(i)]["target"].item()
         if torch.is_tensor(dataset[int(i)]["target"])
@@ -75,70 +126,44 @@ def calculate_annotation_prevalence(
         for i in evaluation_indices
     ])
 
-    # Keep only binary and count variables.
-    selected_variables = [
-        variable for variable in selected_variables
+    # Keep only binary annotations present in the dataset.
+    binary_variables = [
+        variable for variable in binary_variables
         if variable in annotations_df.columns
     ]
 
-    annotations_df = annotations_df[selected_variables].copy()
+    annotations_df = annotations_df[binary_variables].copy()
 
-    # Ensure numeric values.
+    # Ensure binary numeric values.
     annotations_df = annotations_df.apply(
         pd.to_numeric, errors="coerce"
     ).fillna(0)
 
-    # Count variables represent presence/absence, not number of occurrences.
-    annotations_df[count_variables] = (
-        annotations_df[
-            [v for v in count_variables if v in annotations_df.columns]
-        ] > 0
-    ).astype(int)
+    annotations_df = (annotations_df > 0).astype(int)
 
-    # Binary annotations are also represented as 0/1.
-    annotations_df[binary_variables] = (
-        annotations_df[
-            [v for v in binary_variables if v in annotations_df.columns]
-        ] > 0
-    ).astype(int)
-
-    # Remove class-specific suffixes, if present.
+    # Remove class-specific annotations.
     suffixes = tuple(
         f"_{name}" for name in class_names.values()
     )
 
-    annotations_df.columns = [
-        re.sub(
-            rf"(?:{'|'.join(map(re.escape, suffixes))})$",
-            "",
-            str(col),
-        )
-        for col in annotations_df.columns
+    annotations_df = annotations_df.loc[
+        :,
+        [
+            col for col in annotations_df.columns
+            if not str(col).endswith(suffixes)
+        ]
     ]
 
-    # Merge columns with the same concept name, if any.
-    annotations_df = (
-        annotations_df.T.groupby(level=0).max().T
-    )
-
-    # Determine predicted labels.
-    targets = np.asarray(targets).astype(int)
+    # Convert prediction probabilities into class labels.
     predictions = (
-        np.asarray(predictions) >= classification_threshold
+        predictions >= classification_threshold
     ).astype(int)
-
-    if class_names is None:
-        class_names = {
-            0: "class_0",
-            1: "class_1",
-        }
 
     groups = {}
 
-
-
-    # Define the four groups.
+    # Define correctly and incorrectly classified groups.
     for class_id, class_name in class_names.items():
+
         groups[f"correct_{class_name}"] = (
             (targets == class_id) & (predictions == class_id)
         )
@@ -175,9 +200,7 @@ def calculate_annotation_prevalence(
         "annotation_prevalence": annotation_prevalence,
         "class_prediction_group_sizes": class_prediction_group_sizes,
         "binary_variables": binary_variables,
-        "count_variables": count_variables,
     }
-
 
 def main(args):
     
@@ -330,15 +353,14 @@ def main(args):
 
         # Annotation variable types.
         "binary_variables": annotation_statistics["binary_variables"],
-        "count_variables": annotation_statistics["count_variables"],
 
         # Classification configuration.
         "class_names": class_names,
         "classification_threshold": args.classification_threshold,
     }
 
-    print("Saving results to:", args.output_path)
-    torch.save(output, args.output_path)
+    print("Saving results to:", args.sae_annotation_association_path)
+    torch.save(output, args.sae_annotation_association_path)
 
 
 if __name__ == "__main__":
@@ -347,7 +369,7 @@ if __name__ == "__main__":
     parser.add_argument("--embeddings_path", required=True)
     parser.add_argument("--splits_path", required=True)
     parser.add_argument("--checkpoint_path", required=True)
-    parser.add_argument("--output_path", default="class_activations.pt")
+    parser.add_argument("--sae_annotation_association_path", default="sae_annotation_association_results.pt")
 
     parser.add_argument(
         "--maxima_path",

@@ -203,6 +203,7 @@ def main(args):
         if args.class_names is not None
         else None
     )
+    
     plot_discriminative_feature_proportions(
         class_activations=sae_annotation_association,
         feature_annotations=feature_annotations,

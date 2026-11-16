@@ -115,6 +115,38 @@ def plot_feature_activity_upset(
 
     return fig, summaries
 
+def get_annotation_depth(annotation, hierarchy):
+    """Return the depth of an annotation in the hierarchy."""
+
+    def search(tree, depth=1):
+        for name, children in tree.items():
+            if name == annotation:
+                return depth
+
+            result = search(children, depth + 1)
+
+            if result is not None:
+                return result
+
+        return None
+
+    return search(hierarchy)
+
+def is_descendant(annotation, potential_parent, separator="-->"):
+    """Check whether annotation is a descendant of potential_parent."""
+
+    annotation_parts = [
+        part.strip() for part in annotation.split(separator)
+    ]
+    parent_parts = [
+        part.strip() for part in potential_parent.split(separator)
+    ]
+
+    return (
+        len(annotation_parts) > len(parent_parts)
+        and annotation_parts[:len(parent_parts)] == parent_parts
+    )
+
 def build_feature_annotations(
     concept_feature_pairs,
     numeric_feature_pairs,
@@ -124,6 +156,8 @@ def build_feature_annotations(
     min_numeric_mean=None,
     max_numeric_gap=None,
     min_numeric_test=None,
+    hierarchy=None,
+    score_decimals=4,
 ):
     """
     Reverse annotation-to-feature dictionaries into feature-to-annotation
@@ -133,19 +167,47 @@ def build_feature_annotations(
     ----------
     concept_feature_pairs : dict
         Annotation -> list of feature information dictionaries.
-        Requires 'feature', 'f1', and 'test'['f1'].
+        Each feature dictionary contains:
+            - 'feature': SAE feature index.
+            - 'validation': dictionary containing validation metrics,
+            including 'f1' and optionally 'threshold' and
+            'threshold_proportion'.
+            - 'test': dictionary containing test metrics, including 'f1'.
 
     numeric_feature_pairs : dict
         Numeric variable -> list of feature information dictionaries.
-        Requires 'feature', 'correlation', and 'test_correlation'.
+        Each feature dictionary contains:
+            - 'feature': SAE feature index.
+            - 'validation': dictionary containing the validation
+            'correlation'.
+            - 'test': dictionary containing the test 'correlation'.
 
-    Threshold arguments : float or None
-        Optional selection criteria. None disables that criterion.
+    min_categorical_mean, max_categorical_gap, min_categorical_test :
+        float or None
+        Optional selection criteria for categorical annotations.
+        Mean F1 is calculated across validation and test sets, while
+        generalisation gap is the absolute difference between them.
+
+    min_numeric_mean, max_numeric_gap, min_numeric_test : float or None
+        Optional selection criteria for numeric annotations.
+        Mean absolute correlation and generalisation gap are calculated
+        using the absolute validation and test correlations.
+
+    hierarchy : optional
+        Annotation hierarchy used to prioritise more specific annotations
+        when their scores are tied.
+
+    score_decimals : int
+        Number of decimal places used to identify tied scores when
+        applying the annotation hierarchy.
 
     Returns
     -------
     dict
-        SAE feature -> ranked categorical and numeric annotations.
+        SAE feature -> dictionary containing ranked categorical and
+        numeric annotations. Each annotation entry includes its
+        validation and test scores, mean score, generalisation gap,
+        acceptance status, rank and additional notes.
     """
 
     candidates = {}
@@ -170,7 +232,7 @@ def build_feature_annotations(
         for info in feature_list:
             feature = info["feature"]
 
-            val = info.get("f1", np.nan)
+            val = info.get("validation", {}).get("f1", np.nan)
             test = info.get("test", {}).get("f1", np.nan)
 
             val = float(val)
@@ -199,10 +261,10 @@ def build_feature_annotations(
                 "test_score": test,
                 "mean_score": mean,
                 "generalisation_gap": gap,
-                "threshold": info.get("threshold"),
+                "threshold": info.get("validation", {}).get("threshold"),
                 "threshold_proportion": info.get(
-                    "threshold_proportion"
-                ),
+                    "validation", {}
+                ).get("threshold_proportion"),
                 "accepted": accepted,
                 "notes": [],
             })
@@ -213,8 +275,12 @@ def build_feature_annotations(
         for info in feature_list:
             feature = info["feature"]
 
-            val = float(info.get("correlation", np.nan))
-            test = float(info.get("test_correlation", np.nan))
+            val = float(
+                info.get("validation", {}).get("correlation", np.nan)
+            )
+            test = float(
+                info.get("test", {}).get("correlation", np.nan)
+            )
 
             # Rank correlations by magnitude, retaining their signs.
             if np.isfinite(val) and np.isfinite(test):
@@ -317,9 +383,60 @@ def build_feature_annotations(
                 ),
                 reverse=True,
             )
+            
+            if hierarchy is not None:
+                i = 0
+                while i < len(selected):
+                    if not np.isfinite(selected[i]["mean_score"]):
+                        i += 1
+                        continue
+
+                    score = round(
+                        selected[i]["mean_score"],
+                        score_decimals,
+                    )
+
+                    # Find annotations with the same rounded score
+                    tied = []
+                    j = i
+
+                    while (
+                        j < len(selected)
+                        and np.isfinite(selected[j]["mean_score"])
+                        and round(
+                            selected[j]["mean_score"],
+                            score_decimals,
+                        ) == score
+                    ):
+                        tied.append(selected[j])
+                        j += 1
+
+                    # Prioritise descendants over their ancestors
+                    for entry in tied:
+                        annotation = entry["annotation"]
+
+                        entry["_specificity_priority"] = sum(
+                            is_descendant(
+                                other["annotation"],
+                                annotation,
+                            )
+                            for other in tied
+                            if other is not entry
+                        )
+
+
+                    tied.sort(
+                        key=lambda entry: entry["_specificity_priority"],
+                        reverse=True,
+                    )
+
+                    selected[i:j] = tied
+
+                    i = j
 
             for rank, entry in enumerate(selected, start=1):
                 entry["rank"] = rank
+                entry.pop("_specificity_priority", None)
 
             feature_annotations[feature][annotation_type] = selected
 
@@ -963,24 +1080,15 @@ def plot_discriminative_feature_proportions(
 
         annotation = stats["annotation"]
         annotation_threshold = stats["threshold"]
-
-        # Remove class-specific suffixes from annotation names.
         suffixes = [
-            re.escape(f"_{name}")
-            for name in class_names.values()
+            f"_{name}" for name in class_names.values()
         ]
+        annotation_name = str(annotation)
 
-        suffix_pattern = (
-            r"(?:"
-            + "|".join(suffixes)
-            + r"|_presence)$"
-        )
-
-        annotation_name = re.sub(
-            suffix_pattern,
-            "",
-            str(annotation),
-        )
+        for suffix in suffixes:
+            if annotation_name.endswith(suffix):
+                annotation_name = annotation_name[:-len(suffix)]
+                break
 
         # Annotation prevalence points.
         if annotation_name in annotation_prevalence.index:

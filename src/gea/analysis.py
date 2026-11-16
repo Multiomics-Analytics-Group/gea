@@ -444,7 +444,7 @@ def add_class_specific_annotations(
             if not pd.isna(annotation[name])
         }) <= 1
     }
-
+    
     class_annotations = [
         {
             name: value
@@ -453,7 +453,6 @@ def add_class_specific_annotations(
         }
         for annotation in class_annotations
     ]
-
 
     return class_annotations
 
@@ -541,84 +540,6 @@ def calculate_f1(metrics, concept_name, threshold):
     f1 = 2 * tp / (2 * tp + fp + fn + 1e-8)
 
     return f1
-
-def gea_annotation(
-        sae_model, 
-        data_loader, 
-        thresholds = [0, 0.15, 0.5, 0.6, 0.8], 
-        device = 'cuda',
-    ):
-
-    # In this version, GEA annotation does not select features based on F1-score
-
-    sae_model.to(device)
-    sae_model.eval()
-
-    concept_names = list(data_loader.dataset[0]["annotation"].keys())
-    num_features = sae_model.latent_dim
-
-    concept_counts = {
-        concept: 0
-        for concept in concept_names
-    }
-
-    max_features, frequency_stats, mean_active_activation = compute_feature_maxima(sae_model = sae_model, 
-                                                                                   data_loader = data_loader,
-                                                                                   device = device)
-
-    metrics = {
-        concept: {
-            th: {
-                "tp": torch.zeros(num_features),
-                "fp": torch.zeros(num_features),
-                "tn": torch.zeros(num_features),
-                "fn": torch.zeros(num_features),
-            }
-            for th in thresholds
-        }
-        for concept in concept_names
-    }
-        
-    with torch.no_grad():
-
-        for batch in data_loader:
-
-            embeddings = batch["embedding"].to(device)
-            concepts = batch['annotation']
-
-            z_sae, _ = sae_model(embeddings)
-
-            for concept_name, labels in concepts.items():
-                labels = labels.to(device)
-                concept_counts[concept_name] += labels.sum().item()
-                for th in thresholds:
-
-                    binary = activations_preparation(sae_activations=z_sae,
-                                                     feature_maxima=max_features,
-                                                     threshold=th)
-                    
-                    tp, fp, tn, fn = confusion_counts(
-                        binary_acts=binary, 
-                        labels = labels
-                    )
-
-                    metrics[concept_name][th]["tp"] += tp.cpu()
-                    metrics[concept_name][th]["fp"] += fp.cpu()
-                    metrics[concept_name][th]["tn"] += tn.cpu()
-                    metrics[concept_name][th]["fn"] += fn.cpu()
-
-    f1_scores_concepts = {
-        concept_name: {}
-        for concept_name in concept_names
-    }
-
-    for concept_name in concept_names:
-        for th in thresholds:
-            f1scores = calculate_f1(metrics=metrics, concept_name=concept_name, threshold=th)
-            f1_scores_concepts[concept_name][th] = f1scores
-                      
-    return f1_scores_concepts, concept_counts, frequency_stats, max_features
-
 
 def gea_annotation(
     sae_model,
@@ -772,6 +693,7 @@ def gea_annotation(
 
     return (
         f1_scores_concepts,
+        metrics,
         concept_counts,
         frequency_stats,
         max_features.cpu(),
@@ -824,6 +746,7 @@ def best_concept_features(counts, best_features, min_count=50):
 def select_concept_features(
     counts,
     f1_scores,
+    confusion_metrics,
     f1_threshold=0.5,
     min_count=50
 ):
@@ -853,12 +776,22 @@ def select_concept_features(
                 if f1 <= f1_threshold:
                     continue
 
+                metrics = confusion_metrics[concept][th]
+                tp = metrics["tp"][feature].item()
+                fp = metrics["fp"][feature].item()
+                tn = metrics["tn"][feature].item()
+                fn = metrics["fn"][feature].item()
+
                 if feature not in feature_results:
 
                     feature_results[feature] = {
                         "feature": feature,
                         "f1": f1,
                         "threshold": th,
+                        "tp": tp,
+                        "fp": fp,
+                        "tn": tn,
+                        "fn": fn,
                         "validation_count": counts[concept],
                         "threshold_count": 1,
                     }
@@ -872,6 +805,10 @@ def select_concept_features(
                     if f1 > feature_results[feature]["f1"]:
                         feature_results[feature]["f1"] = f1
                         feature_results[feature]["threshold"] = th
+                        feature_results[feature]["tp"] = tp
+                        feature_results[feature]["fp"] = fp
+                        feature_results[feature]["tn"] = tn
+                        feature_results[feature]["fn"] = fn
 
         # Add proportion of thresholds
         for feature_info in feature_results.values():
@@ -920,58 +857,6 @@ def select_numeric_features(
 
     return features_per_variable
 
-
-def concept_feature_test(sae_model, data_loader, max_features, 
-                         concept_feature_pairs, device = 'cuda'):
-
-    sae_model.to(device)
-    sae_model.eval()
-
-    for concept, list in concept_feature_pairs.items():
-        for info in list:
-            info["test"] = {
-                "test_count": 0,
-                "tp": 0,
-                "fp": 0,
-                "tn": 0,
-                "fn": 0
-            }
-        
-    with torch.no_grad():
-        for batch in data_loader:
-
-            embeddings = batch["embedding"].to(device)
-            annotation = batch['annotation']
-            z_sae, _ = sae_model(embeddings)
-
-            for concept, list in concept_feature_pairs.items():
-                for info in list:
-                    feature = info["feature"]
-
-                    binary = activations_preparation(
-                        sae_activations=z_sae[:,feature],
-                        feature_maxima=max_features[feature],
-                        threshold=info["threshold"]
-                    )
-                
-                    labels = annotation[concept].to(device)
-                    info["test"]["test_count"] += labels.sum().item()
-
-                    tp, fp, tn, fn = confusion_counts(binary_acts=binary, labels = labels)
-
-                    info["test"]["tp"] += tp.item()
-                    info["test"]["fp"] += fp.item()
-                    info["test"]["tn"] += tn.item()
-                    info["test"]["fn"] += fn.item()
-
-    for concept, list in concept_feature_pairs.items():
-        for info in list:
-            f1 = 2 * info["test"]["tp"] / (2 * info["test"]["tp"] + info["test"]["fp"] + info["test"]["fn"] + 1e-8)
-            info["test"]["f1"] = f1
-                    
-    return concept_feature_pairs 
-
-
 def concept_feature_test(
     sae_model,
     data_loader,
@@ -987,6 +872,25 @@ def concept_feature_test(
     # Initialise categorical concept evaluation
     for concept, feature_list in concept_feature_pairs.items():
         for info in feature_list:
+
+            validation_keys = [
+                "f1",
+                "threshold",
+                "tp",
+                "fp",
+                "tn",
+                "fn",
+                "validation_count",
+                "threshold_count",
+                "threshold_proportion",
+            ]
+
+            info["validation"] = {
+                key: info.pop(key)
+                for key in validation_keys
+                if key in info
+            }
+
             info["test"] = {
                 "test_count": 0,
                 "tp": 0,
@@ -997,6 +901,16 @@ def concept_feature_test(
 
     numeric_feature_pairs = numeric_feature_pairs or {}
     numeric_variables = numeric_variables or []
+
+    # Move existing numeric correlations into validation
+    for variable, feature_list in numeric_feature_pairs.items():
+        for info in feature_list:
+            if "correlation" in info:
+                info["validation"] = {
+                    "correlation": info.pop("correlation")
+                }
+
+            info["test"] = {}
 
     # Collect test-set values for numeric correlations
     numeric_values = {var: [] for var in numeric_variables}
@@ -1021,7 +935,7 @@ def concept_feature_test(
                     binary = activations_preparation(
                         sae_activations=z_sae[:, feature],
                         feature_maxima=max_features[feature],
-                        threshold=info["threshold"],
+                        threshold=info["validation"]["threshold"],
                     )
 
                     info["test"]["test_count"] += labels.sum().item()
@@ -1078,7 +992,7 @@ def concept_feature_test(
             else:
                 correlation = np.nan
 
-            info["test_correlation"] = float(correlation)
+            info["test"]["correlation"] = float(correlation)
 
     return concept_feature_pairs, numeric_feature_pairs
 

@@ -4,18 +4,56 @@ from pathlib import Path
 import csv
 from rdkit import RDConfig
 from collections import defaultdict
+import pandas as pd
 
 directory = Path("dict")
 directory.mkdir(parents=True, exist_ok=True)
 
 motifs = {}
+motif_metadata = {}
+
+def add_motif(name, smarts, source, parent=None, level=1):
+    motifs[name] = smarts
+
+    motif_metadata[name] = {
+        "source": source,
+        "parent": parent,
+        "level": level
+    }
+
+def extract_functional_group_hierarchy(fg_tree):
+    motifs = {}
+
+    def visit(fg, parent_name=None, level=1):
+        # Build the name using the parent hierarchy
+        name = (
+            f"{parent_name} --> {fg.name}"
+            if parent_name
+            else fg.name
+        )
+
+        add_motif(
+            name=name,
+            smarts=fg.smarts,
+            source="FunctionalGroups",
+            parent=parent_name,
+            level=level
+        )
+
+        # Recursively process its children
+        for child in fg.children:
+            visit(child, name, level + 1)
+
+    for fg in fg_tree:
+        visit(fg)
+
+    return motifs
+
 fg_tree = FunctionalGroups.BuildFuncGroupHierarchy()
 
-for fg in fg_tree:
-    motifs[fg.name] = fg.smarts
-    subfg = fg.children
-    for child in subfg:
-        motifs[fg.name + " - " + child.name] = child.smarts
+fg_motifs = (
+    extract_functional_group_hierarchy(fg_tree)
+)
 
 def load_fragment_motifs(motifs):
     rdkit_data = Path(RDConfig.RDDataDir)
@@ -58,7 +96,11 @@ def load_fragment_motifs(motifs):
 
             name = name[0].upper() + name[1:]
 
-            motifs[name] = smarts
+            add_motif(
+                name=name,
+                smarts=smarts,
+                source="FragmentDescriptors"
+            )
 
     return motifs
 
@@ -475,6 +517,13 @@ motifs["GROVER basic"] = (
 for ring_size in range(3, 9):
     motifs[f"GROVER ring size {ring_size}"] = f"[r{ring_size}]"
 
+for name in motifs:
+    motif_metadata.setdefault(name, {
+        "source": "custom",
+        "parent": None,
+        "level": 1
+    })
+
 filtered_motifs = {}
 seen_smarts = set()
 
@@ -483,6 +532,22 @@ for name, smarts in motifs.items():
         filtered_motifs[name] = smarts
         seen_smarts.add(smarts)
 
+df = pd.DataFrame([
+    {
+        "name": name,
+        "smarts": smarts,
+        **motif_metadata[name]
+    }
+    for name, smarts in motifs.items()
+])
+
+df["keep"] = True
+df["notes"] = ""
+
+df.to_excel(
+    "dict/motif_catalogue.xlsx",
+    index=False
+)
 
 with open('dict/motif_dictionary.pkl', 'wb') as f:
     pickle.dump(filtered_motifs, f)
