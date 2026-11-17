@@ -1,13 +1,17 @@
+from copyreg import pickle
 import os
 import argparse
 import torch
 import json
+import pickle
 
 from gea.results import (
     plot_feature_activity_upset,
     build_feature_annotations,
     plot_top_feature_annotations,
-    plot_discriminative_feature_proportions,
+    calculate_feature_metrics,
+    select_features,
+    plot_selected_features,
 )
 
 
@@ -128,6 +132,30 @@ def parse_args():
         metavar=("YMIN", "YMAX"),
         help="Lower and upper limits of the y-axis in the discriminative feature proportion plots (default: 0 1).",
     )
+    parser.add_argument(
+        "--ranking_metric",
+        type=str,
+        default="absolute_frequency_difference",
+        choices=["absolute_frequency_difference", "specificity_score", "frequency_difference",
+                 "positive_error_frequency_difference", "absolute_frequency_difference",
+                 "balanced_accuracy", "odds_ratio", "precision_difference"],
+        help="Metric used to rank features for selection in the discriminative feature analysis (default: absolute_frequency_difference).",
+    )
+
+    parser.add_argument(
+        "--max_fdr",
+        type=float,
+        default=None,
+        help="Maximum false discovery rate (FDR) allowed for feature selection in the discriminative feature analysis. If None, no FDR threshold is applied (default: None).",
+    )
+
+    parser.add_argument(
+        "--activation_thresholds",
+        type=float,
+        nargs="+",
+        default=[0, 0.15, 0.5, 0.6, 0.8],
+        help="One or more activation thresholds."
+    )
 
     return parser.parse_args()
 
@@ -203,23 +231,35 @@ def main(args):
         if args.class_names is not None
         else None
     )
-    
-    plot_discriminative_feature_proportions(
+
+    metrics = calculate_feature_metrics(
         class_activations=sae_annotation_association,
         feature_annotations=feature_annotations,
         class_names=class_names,
         positive_label=args.positive_label,
-        top_k=args.top_k,
         probability_threshold=args.probability_threshold,
         accepted_only=True,
+        activation_thresholds=args.activation_thresholds,
+    )
+
+    with open(os.path.join(args.output_dir, "feature_metrics.pkl"), "wb") as f:
+        pickle.dump(metrics, f)
+
+    selected_features = select_features(
+        metrics,
+        ranking_metric=args.ranking_metric,
+        top_k=args.top_k,
+        max_fdr=args.max_fdr,
+    )
+
+    plot_selected_features(
+        metrics=metrics,
+        selected_features=selected_features,
         figsize_per_feature=(5, 3.5),
+        ylim=args.ylim,
         output_path=os.path.join(
             args.output_dir, "discriminative_feature_proportions.png"
         ),
-        threshold_key="threshold",
-        activation_thresholds=(0, 0.15, 0.5, 0.6, 0.8),
-        min_active=args.min_active,
-        ylim=args.ylim,
     )
 
 
