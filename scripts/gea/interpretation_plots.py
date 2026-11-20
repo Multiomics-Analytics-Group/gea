@@ -133,12 +133,21 @@ def parse_args():
         help="Lower and upper limits of the y-axis in the discriminative feature proportion plots (default: 0 1).",
     )
     parser.add_argument(
-        "--ranking_metric",
+        "--ranking_metric_categorical",
         type=str,
         default="absolute_frequency_difference",
         choices=["absolute_frequency_difference", "specificity_score", "frequency_difference",
                  "positive_error_frequency_difference", "absolute_frequency_difference",
                  "balanced_accuracy", "odds_ratio", "precision_difference"],
+        help="Metric used to rank features for selection in the discriminative feature analysis (default: absolute_frequency_difference).",
+    )
+
+    parser.add_argument(
+        "--ranking_metric_numeric",
+        type=str,
+        default="absolute_class_correlation_difference",
+        choices=["absolute_class_correlation_difference", "class_correlation_difference", "mean_absolute_correlation",
+                 "positive_error_correlation_difference", "negative_error_correlation_difference"],
         help="Metric used to rank features for selection in the discriminative feature analysis (default: absolute_frequency_difference).",
     )
 
@@ -232,7 +241,7 @@ def main(args):
         else None
     )
 
-    metrics = calculate_feature_metrics(
+    categorical_metrics = calculate_feature_metrics(
         class_activations=sae_annotation_association,
         feature_annotations=feature_annotations,
         class_names=class_names,
@@ -240,27 +249,61 @@ def main(args):
         probability_threshold=args.probability_threshold,
         accepted_only=True,
         activation_thresholds=args.activation_thresholds,
+        annotation_type="categorical",
     )
 
-    with open(os.path.join(args.output_dir, "feature_metrics.pkl"), "wb") as f:
-        pickle.dump(metrics, f)
+    with open(os.path.join(args.output_dir, "categorical_feature_metrics.pkl"), "wb") as f:
+        pickle.dump(categorical_metrics, f)
 
-    selected_features = select_features(
-        metrics,
-        ranking_metric=args.ranking_metric,
+    categorical_selected_features = select_features(
+        categorical_metrics,
+        ranking_metric=args.ranking_metric_categorical,
         top_k=args.top_k,
         max_fdr=args.max_fdr,
     )
 
     plot_selected_features(
-        metrics=metrics,
-        selected_features=selected_features,
+        metrics=categorical_metrics,
+        selected_features=categorical_selected_features,
         figsize_per_feature=(5, 3.5),
         ylim=args.ylim,
         output_path=os.path.join(
-            args.output_dir, "discriminative_feature_proportions.png"
+            args.output_dir, "categorical_discriminative_feature_proportions.png"
         ),
     )
+
+    if args.is_numeric:
+        numeric_metrics = calculate_feature_metrics(
+                class_activations=sae_annotation_association,
+                feature_annotations=feature_annotations,
+                class_names=class_names,
+                positive_label=args.positive_label,
+                probability_threshold=args.probability_threshold,
+                accepted_only=True,
+                activation_thresholds=args.activation_thresholds,
+                annotation_type="numeric",
+        )
+    
+        with open(os.path.join(args.output_dir, "numeric_feature_metrics.pkl"), "wb") as f:
+            pickle.dump(numeric_metrics, f)
+    
+        numeric_selected_features = select_features(
+            numeric_metrics,
+            ranking_metric=args.ranking_metric_numeric,
+            top_k=args.top_k,
+            max_fdr=None,
+        )
+    
+        plot_selected_features(
+            metrics=numeric_metrics,
+            selected_features=numeric_selected_features,
+            figsize_numeric=(10,1),
+            ylim=args.ylim,
+            output_path=os.path.join(
+                args.output_dir, "numeric_discriminative_feature_proportions.png"
+            ),
+        )
+
 
 
 if __name__ == "__main__":

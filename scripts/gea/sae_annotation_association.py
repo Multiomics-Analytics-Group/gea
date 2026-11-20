@@ -13,6 +13,7 @@ from gea.analysis import (
 )
 from pathlib import Path
 import json
+from scipy.stats import spearmanr
 
 
 def get_embeddings(batch):
@@ -104,7 +105,8 @@ def calculate_annotation_prevalence(
         }
 
     # Identify binary annotations.
-    _, _, binary_variables = detect_numeric_annotation_types(dataset)
+    continuous_variables, count_variables, binary_variables = detect_numeric_annotation_types(dataset)
+    numeric_variables = continuous_variables + count_variables
 
     # Extract annotations for the selected samples.
     annotations_df = pd.DataFrame.from_records(
@@ -200,7 +202,138 @@ def calculate_annotation_prevalence(
         "annotation_prevalence": annotation_prevalence,
         "class_prediction_group_sizes": class_prediction_group_sizes,
         "binary_variables": binary_variables,
+        "numeric_variables": numeric_variables
     }
+
+def calculate_numeric_correlations_by_group(
+    dataset,
+    evaluation_indices,
+    sample_results,
+    numeric_variables,
+    class_names=None,
+    classification_threshold=0.5,
+):
+    """
+    Calculate Spearman correlations between SAE feature activations
+    and numeric annotations independently in each classification group.
+
+    Returns
+    -------
+    dict
+        {
+            feature_id: {
+                annotation_name: {
+                    group_name: {
+                        "correlation": float,
+                        "n": int,
+                    }
+                }
+            }
+        }
+    """
+
+    if class_names is None:
+        class_names = {
+            0: "class_0",
+            1: "class_1",
+        }
+
+    # Recover activations, targets and predictions.
+    results = list(sample_results.values())
+
+    activations = np.stack([
+        result["activations"].numpy()
+        for result in results
+    ])
+
+    targets = np.asarray([
+        result["target"] for result in results
+    ]).astype(int)
+
+    predictions = np.asarray([
+        result["prediction"] for result in results
+    ])
+
+    predictions = (
+        predictions >= classification_threshold
+    ).astype(int)
+
+    # Define classification groups.
+    groups = {}
+
+    for class_id, class_name in class_names.items():
+
+        groups[f"correct_{class_name}"] = (
+            (targets == class_id) & (predictions == class_id)
+        )
+
+        groups[f"misclassified_{class_name}"] = (
+            (targets == class_id) & (predictions != class_id)
+        )
+
+    # Recover numeric annotations.
+    annotation_values = {}
+
+    for name in numeric_variables:
+
+        values = []
+
+        for idx in evaluation_indices:
+
+            value = dataset.annotations[int(idx)].get(name, np.nan)
+
+            if torch.is_tensor(value):
+                value = value.item()
+
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                value = np.nan
+
+            values.append(value)
+
+        annotation_values[name] = np.asarray(values, dtype=float)
+
+    # Calculate correlations for each feature, annotation and group.
+    numeric_correlations = {}
+
+    for feature in range(activations.shape[1]):
+
+        numeric_correlations[feature] = {}
+
+        feature_values = activations[:, feature]
+
+        for name, values in annotation_values.items():
+
+            numeric_correlations[feature][name] = {}
+
+            for group_name, mask in groups.items():
+
+                valid = (
+                    mask
+                    & np.isfinite(values)
+                    & np.isfinite(feature_values)
+                )
+
+                n = int(valid.sum())
+                correlation = np.nan
+
+                if (
+                    n >= 2
+                    and np.unique(values[valid]).size >= 2
+                    and np.unique(feature_values[valid]).size >= 2
+                ):
+                    correlation = spearmanr(
+                        values[valid],
+                        feature_values[valid],
+                    ).statistic
+
+                numeric_correlations[feature][name][group_name] = {
+                    "correlation": correlation,
+                    "n": n,
+                }
+
+    return numeric_correlations
 
 def main(args):
     
@@ -341,6 +474,25 @@ def main(args):
         classification_threshold=args.classification_threshold,
     )
 
+    numeric_variables = annotation_statistics["numeric_variables"]
+
+    numeric_correlations_by_group = {}
+
+    if numeric_variables:
+
+        print("Calculating numeric annotation correlations by group...")
+
+        numeric_correlations_by_group = (
+            calculate_numeric_correlations_by_group(
+                dataset=dataset,
+                evaluation_indices=evaluation_indices,
+                sample_results=sample_results,
+                numeric_variables=numeric_variables,
+                class_names=class_names,
+                classification_threshold=args.classification_threshold,
+            )
+        )
+
     output = {
         "split": args.split,
         "train_feature_maxima": train_feature_maxima.cpu(),
@@ -353,6 +505,10 @@ def main(args):
 
         # Annotation variable types.
         "binary_variables": annotation_statistics["binary_variables"],
+        "numeric_variables": numeric_variables,
+
+        # Numeric annotation correlations.
+        "numeric_correlations_by_group": numeric_correlations_by_group,
 
         # Classification configuration.
         "class_names": class_names,
